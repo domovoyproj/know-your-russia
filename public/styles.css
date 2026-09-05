@@ -757,3 +757,25 @@ input:focus, textarea:focus {
 }
 .leaflet-popup-tip { background: var(--panel) !important; }
 .leaflet-popup-content { margin: 12px 14px !important; font-family: 'Inter', sans-serif !important; }
+
+/* AREA TOOLTIP */
+.area-tooltip {
+  background: var(--panel-glass) !important;
+  backdrop-filter: blur(14px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: 7px !important;
+  color: #ffffff !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 5px 10px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
+  pointer-events: none !important;
+}
+.leaflet-tooltip-top:before {
+  border-top-color: var(--panel) !important;
+}
+.leaflet-tooltip-bottom:before {
+  border-bottom-color: var(--panel) !important;
+}
+

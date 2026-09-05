@@ -45,8 +45,8 @@
   };
 
   const getAreaTitle = (p) => {
-    if (p.iso && RU_REGIONS[p.iso]) return RU_REGIONS[p.iso];
-    return p.name || "Территория";
+    if (p.level === 1 && p.iso && RU_REGIONS[p.iso]) return RU_REGIONS[p.iso];
+    return p.name || (p.iso && RU_REGIONS[p.iso]) || "Территория";
   };
 
   const api = (path, opts = {}) => {
@@ -162,46 +162,90 @@
 
   // ---- POLYGON STYLES -------------------------------------------------------
   function styleArea(feature) {
-    const total = feature.properties.total || 0;
-    let fillColor = "#334155";
-    let fillOpacity = 0.04;
-    let strokeColor = "rgba(148, 163, 184, 0.35)";
-    let weight = 1;
+    const p = feature.properties;
+    const total = p.total || 0;
+    const isDistrict = p.level === 2;
 
-    if (total > 0 && total <= 3) {
-      fillColor = "#475569";
-      fillOpacity = 0.18;
-      strokeColor = "rgba(203, 213, 225, 0.6)";
-      weight = 1.2;
-    } else if (total > 3 && total <= 15) {
-      fillColor = "#92400e";
-      fillOpacity = 0.25;
-      strokeColor = "#d97706";
-      weight = 1.3;
-    } else if (total > 15) {
-      fillColor = "#991b1b";
-      fillOpacity = 0.3;
-      strokeColor = "#dc2626";
-      weight = 1.5;
+    if (isDistrict) {
+      let strokeColor = "#3b82f6";
+      let weight = 1.6;
+      let fillColor = "#3b82f6";
+      let fillOpacity = 0.08;
+
+      if (total > 0 && total <= 3) {
+        fillColor = "#2563eb";
+        fillOpacity = 0.22;
+        strokeColor = "#1d4ed8";
+        weight = 1.8;
+      } else if (total > 3 && total <= 15) {
+        fillColor = "#d97706";
+        fillOpacity = 0.28;
+        strokeColor = "#b45309";
+        weight = 2;
+      } else if (total > 15) {
+        fillColor = "#dc2626";
+        fillOpacity = 0.35;
+        strokeColor = "#991b1b";
+        weight = 2.2;
+      }
+
+      return {
+        fillColor,
+        fillOpacity,
+        color: strokeColor,
+        weight,
+        dashArray: "4, 4",
+        opacity: 0.85,
+      };
+    } else {
+      let strokeColor = "#475569";
+      let weight = 1.8;
+      let fillColor = "#3b82f6";
+      let fillOpacity = 0.06;
+
+      if (total > 0 && total <= 3) {
+        fillColor = "#2563eb";
+        fillOpacity = 0.2;
+        strokeColor = "#1d4ed8";
+      } else if (total > 3 && total <= 15) {
+        fillColor = "#d97706";
+        fillOpacity = 0.26;
+        strokeColor = "#b45309";
+      } else if (total > 15) {
+        fillColor = "#dc2626";
+        fillOpacity = 0.32;
+        strokeColor = "#991b1b";
+      }
+
+      return {
+        fillColor,
+        fillOpacity,
+        color: strokeColor,
+        weight,
+        opacity: 0.85,
+      };
     }
-
-    return {
-      fillColor,
-      fillOpacity,
-      color: strokeColor,
-      weight,
-      opacity: 0.85,
-    };
   }
 
   const highlightStyle = {
-    weight: 2,
+    weight: 2.5,
     color: "#ffffff",
-    fillColor: "rgba(255, 255, 255, 0.12)",
-    fillOpacity: 0.2,
+    dashArray: null,
+    fillColor: "#2563eb",
+    fillOpacity: 0.3,
   };
+
   function onEachArea(feature, layer) {
     const p = feature.properties;
+    const title = getAreaTitle(p);
+
+    layer.bindTooltip(title, {
+      sticky: true,
+      direction: "top",
+      offset: [0, -8],
+      className: "area-tooltip",
+    });
+
     layer.on({
       mouseover: (e) => {
         layer.setStyle(highlightStyle);
@@ -214,7 +258,7 @@
       },
       click: (e) => {
         L.DomEvent.stopPropagation(e);
-        openAreaGallery(p.level, p.id, getAreaTitle(p));
+        openAreaGallery(p.level, p.id, title);
       },
     });
   }
