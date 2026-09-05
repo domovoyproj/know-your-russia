@@ -188,6 +188,11 @@ button.danger {
   border-color: rgba(225,29,72,0.3);
   color: #fda4af;
 }
+/* High-end styled OSM tiles */
+#map .leaflet-tile {
+  filter: brightness(0.92) contrast(1.05) saturate(0.85);
+}
+
 
 /* MAP WRAPPER */
 #map-wrap {

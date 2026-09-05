@@ -84,7 +84,6 @@
   };
 
   // ---- MAP INITIALIZATION (NO UKRAINE FLAG!) --------------------------------
-  // attributionControl: false -> we create our own clean attribution with NO flag.
   const map = L.map("map", {
     minZoom: 2,
     worldCopyJump: true,
@@ -97,13 +96,11 @@
     position: "bottomright",
   }).addTo(map);
 
-  // CartoDB Voyager — high-end, clean cartography
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+  // Standard OpenStreetMap with clean cartography (no watermark, no API key)
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    subdomains: "abcd",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
   }).addTo(map);
-
   const cluster = L.markerClusterGroup({
     chunkedLoading: true,
     maxClusterRadius: 50,
