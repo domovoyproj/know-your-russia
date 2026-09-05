@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>KYR — Знай свою Россию</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -11,13 +14,60 @@
 </head>
 <body>
   <header id="topbar">
-    <div class="brand">🇷🇺 KYR <span>Know Your Russia</span></div>
+    <div class="brand">
+      <div class="flag-strip">
+        <span class="f-white"></span>
+        <span class="f-blue"></span>
+        <span class="f-red"></span>
+      </div>
+      <div class="brand-text">
+        <span class="brand-title">KYR</span>
+        <span class="brand-sub">Знай свою Россию</span>
+      </div>
+    </div>
+
+    <!-- Mode / Level switcher -->
+    <div class="view-switch">
+      <button id="lvl-adm1" class="switch-btn active" data-lvl="1">
+        <span class="dot"></span> Области
+      </button>
+      <button id="lvl-adm2" class="switch-btn" data-lvl="2">
+        <span class="dot"></span> Районы и города
+      </button>
+      <button id="lvl-points" class="switch-btn" data-lvl="points">
+        <span class="dot"></span> Точки
+      </button>
+    </div>
+
     <div class="spacer"></div>
     <div id="hint" class="hint"></div>
     <nav id="nav"><!-- filled by app.js --></nav>
   </header>
 
-  <div id="map"></div>
+  <div id="map-wrap">
+    <div id="map"></div>
+
+    <!-- Floating Info Card on Hover -->
+    <div id="area-card" class="area-card hidden">
+      <div class="ac-header">
+        <span class="ac-badge" id="ac-type">Регион</span>
+        <span class="ac-count" id="ac-total">0 материалов</span>
+      </div>
+      <h3 class="ac-title" id="ac-name">—</h3>
+      <div class="ac-stats">
+        <div class="stat-pill"><span class="icon">📷</span> <span id="ac-photos">0</span> фото</div>
+        <div class="stat-pill"><span class="icon">🎥</span> <span id="ac-videos">0</span> видео</div>
+      </div>
+      <button id="ac-gallery-btn" class="ac-btn">Открыть галерею →</button>
+    </div>
+
+    <!-- Mode Helper / Legend -->
+    <div class="map-legend">
+      <span class="legend-chip"><span class="legend-color c-low"></span> Мало</span>
+      <span class="legend-chip"><span class="legend-color c-med"></span> Средне</span>
+      <span class="legend-chip"><span class="legend-color c-high"></span> Много</span>
+    </div>
+  </div>
 
   <!-- Modal shell reused for every dialog -->
   <div id="modal" class="modal hidden">

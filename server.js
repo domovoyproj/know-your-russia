@@ -1,16 +1,15 @@
 // Know Your Russia — single-file Bun HTTP server.
-//   bun run server.js   (or: bun run dev)
 import { join, normalize } from "node:path";
 import { db } from "./lib/db.js";
 import {
   issueToken, currentUser, hashPassword, checkPassword,
 } from "./lib/auth.js";
 import { storeUpload, UPLOAD_ROOT, hasFfmpeg } from "./lib/media.js";
+import { areasInBbox, featureById, pointInGeom } from "./lib/geo.js";
 
 const PORT = Number(Bun.env.PORT) || 3000;
 const MAX_UPLOAD = Number(Bun.env.MAX_UPLOAD_BYTES) || 512 * 1024 * 1024;
 
-// ---- response helpers --------------------------------------------------------
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -18,7 +17,6 @@ const json = (data, status = 200) =>
   });
 const err = (msg, status = 400) => json({ error: msg }, status);
 
-// Shape a media row for API output.
 const publicMedia = (m) => ({
   id: m.id,
   title: m.title,
@@ -34,9 +32,7 @@ const publicMedia = (m) => ({
   created_at: m.created_at,
 });
 
-// ---- static file serving -----------------------------------------------------
 async function serveStatic(baseDir, relPath) {
-  // Reject path traversal.
   const safe = normalize(relPath).replace(/^([/\\.]+)/, "");
   const abs = join(baseDir, safe);
   if (!abs.startsWith(normalize(baseDir))) return err("forbidden", 403);
@@ -45,10 +41,8 @@ async function serveStatic(baseDir, relPath) {
   return new Response(file);
 }
 
-// ---- route table -------------------------------------------------------------
 const routes = [];
 const route = (method, pattern, handler) => {
-  // Convert "/api/users/:id" into a regex with named groups.
   const keys = [];
   const rx = new RegExp(
     "^" + pattern.replace(/:[a-zA-Z]+/g, (m) => {
@@ -70,7 +64,7 @@ function requireAdmin(req) {
   return user;
 }
 
-// ---- auth --------------------------------------------------------------------
+// Auth
 route("POST", "/api/register", async (req) => {
   const { username, password } = await req.json().catch(() => ({}));
   if (!username || !password) return err("username and password required");
@@ -103,7 +97,6 @@ route("GET", "/api/me", (req) => {
   return json({ id: user.id, username: user.username, is_admin: user.is_admin });
 });
 
-// Current user's own uploads (all statuses).
 route("GET", "/api/me/media", (req) => {
   const user = requireUser(req);
   const rows = db.query(
@@ -113,7 +106,6 @@ route("GET", "/api/me/media", (req) => {
   return json(rows.map(publicMedia));
 });
 
-// Public profile: user info + their approved media.
 route("GET", "/api/users/:id", (req, p) => {
   const u = db.query("SELECT id, username, created_at, is_admin FROM users WHERE id = ?").get(p.id);
   if (!u) return err("user not found", 404);
@@ -124,8 +116,7 @@ route("GET", "/api/users/:id", (req, p) => {
   return json({ user: u, media: media.map(publicMedia) });
 });
 
-// ---- media -------------------------------------------------------------------
-// Upload: multipart form { file, title, description, lat, lng }.
+// Media upload & points
 route("POST", "/api/media", async (req) => {
   const user = requireUser(req);
   const form = await req.formData().catch(() => null);
@@ -161,7 +152,6 @@ route("POST", "/api/media", async (req) => {
   return json(publicMedia(row), 201);
 });
 
-// Approved points inside the visible map bbox: ?bbox=west,south,east,north
 route("GET", "/api/points", (req) => {
   const url = new URL(req.url);
   const raw = (url.searchParams.get("bbox") || "").split(",").map(Number);
@@ -184,7 +174,64 @@ route("GET", "/api/points", (req) => {
   })));
 });
 
-// Single media detail (approved for everyone; owner/admin can see any status).
+// Administrative areas (level 1 = region / oblast, level 2 = rayon / district)
+route("GET", "/api/areas", (req) => {
+  const url = new URL(req.url);
+  const level = Number(url.searchParams.get("level")) === 2 ? 2 : 1;
+  const raw = (url.searchParams.get("bbox") || "").split(",").map(Number);
+  const bbox = raw.length === 4 && raw.every(Number.isFinite) ? raw : null;
+
+  const areas = areasInBbox(level, bbox);
+  if (!areas.length) return json({ type: "FeatureCollection", features: [] });
+
+  // Get approved media to compute count per area
+  const approved = db.query(
+    "SELECT id, kind, lat, lng FROM media WHERE status = 'approved'"
+  ).all();
+
+  const features = areas.slice(0, 500).map((a) => {
+    let photos = 0, videos = 0;
+    for (const m of approved) {
+      if (pointInGeom(m.lng, m.lat, a.geometry)) {
+        if (m.kind === "video") videos++; else photos++;
+      }
+    }
+    return {
+      type: "Feature",
+      properties: {
+        id: a.id,
+        name: a.name,
+        iso: a.iso,
+        level,
+        photos,
+        videos,
+        total: photos + videos,
+      },
+      geometry: a.geometry,
+    };
+  });
+
+  return json({ type: "FeatureCollection", features });
+});
+
+// Media inside a specific administrative area
+route("GET", "/api/areas/:level/:id/media", (req, p) => {
+  const level = Number(p.level) === 2 ? 2 : 1;
+  const feat = featureById(level, p.id);
+  if (!feat) return err("area not found", 404);
+
+  const rows = db.query(
+    `SELECT m.*, u.username FROM media m JOIN users u ON u.id = m.user_id
+     WHERE m.status = 'approved' ORDER BY m.created_at DESC`
+  ).all();
+
+  const inArea = rows.filter((m) => pointInGeom(m.lng, m.lat, feat.geometry));
+  return json({
+    area: { id: feat.id, name: feat.name, iso: feat.iso, level },
+    media: inArea.map(publicMedia),
+  });
+});
+
 route("GET", "/api/media/:id", (req, p) => {
   const row = db.query(
     `SELECT m.*, u.username FROM media m JOIN users u ON u.id = m.user_id WHERE m.id = ?`
@@ -198,7 +245,7 @@ route("GET", "/api/media/:id", (req, p) => {
   return json(publicMedia(row));
 });
 
-// ---- admin / moderation ------------------------------------------------------
+// Admin
 route("GET", "/api/admin/pending", (req) => {
   requireAdmin(req);
   const rows = db.query(
@@ -220,20 +267,17 @@ const review = (status) => (req, p) => {
 route("POST", "/api/admin/media/:id/approve", review("approved"));
 route("POST", "/api/admin/media/:id/reject", review("rejected"));
 
-// ---- dispatch ----------------------------------------------------------------
 Bun.serve({
   port: PORT,
-  maxRequestBodySize: MAX_UPLOAD + 8 * 1024 * 1024, // headroom for form fields
+  maxRequestBodySize: MAX_UPLOAD + 8 * 1024 * 1024,
   async fetch(req) {
     const url = new URL(req.url);
     const path = decodeURIComponent(url.pathname);
 
-    // Serve stored media.
     if (path.startsWith("/uploads/")) {
       return serveStatic(UPLOAD_ROOT, path.slice("/uploads/".length));
     }
 
-    // API routes.
     if (path.startsWith("/api/")) {
       for (const r of routes) {
         if (r.method !== req.method) continue;
@@ -244,7 +288,7 @@ Bun.serve({
         try {
           return await r.handler(req, params);
         } catch (thrown) {
-          if (thrown instanceof Response) return thrown; // auth guards
+          if (thrown instanceof Response) return thrown;
           console.error("[500]", req.method, path, thrown);
           return err("internal error", 500);
         }
@@ -252,10 +296,9 @@ Bun.serve({
       return err("not found", 404);
     }
 
-    // Static frontend.
     if (path === "/") return serveStatic("public", "index.html");
     return serveStatic("public", path.slice(1));
   },
 });
 
-console.log(`KYR running on http://localhost:${PORT}  (ffmpeg previews: ${hasFfmpeg ? "on" : "off"})`);
+console.log(`KYR running on http://localhost:${PORT}`);
