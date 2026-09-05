@@ -120,6 +120,189 @@
 
   let areasLayer = L.geoJSON(null).addTo(map);
 
+  // ---- COORDINATES NAVIGATION & JUMP ----------------------------------------
+  let coordMarker = null;
+
+  function parseCoords(input) {
+    if (!input || typeof input !== "string") return null;
+    let s = input.trim();
+
+    // 1. URLs (Google, OSM, Yandex)
+    const gMatch = s.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    if (gMatch) return { lat: parseFloat(gMatch[1]), lng: parseFloat(gMatch[2]) };
+    const osmMatch = s.match(/#map=\d+\/(-?\d+\.?\d*)\/(-?\d+\.?\d*)/);
+    if (osmMatch) return { lat: parseFloat(osmMatch[1]), lng: parseFloat(osmMatch[2]) };
+    const yMatch = s.match(/[?&]ll=(-?\d+\.?\d*)(?:%2C|,)(-?\d+\.?\d*)/);
+    if (yMatch) return { lat: parseFloat(yMatch[2]), lng: parseFloat(yMatch[1]) };
+
+    // 2. DMS format (e.g. 55°45'21"N 37°37'04"E or 55°45'21" с.ш. 37°37'04" в.д.)
+    const dmsRegex = /(\d+)[°\s]+(\d+)['\s]+([0-9.,]+)?["\s]*([NnSsСсЮюEeWwВвЗз]?)/g;
+    const dmsMatches = [...s.matchAll(dmsRegex)];
+    if (dmsMatches.length >= 2) {
+      const parseOneDMS = (m) => {
+        const deg = parseFloat(m[1]) || 0;
+        const min = parseFloat(m[2]) || 0;
+        const sec = parseFloat((m[3] || "").replace(",", ".")) || 0;
+        const dir = (m[4] || "").toUpperCase();
+        let dec = deg + min / 60 + sec / 3600;
+        if (dir === "S" || dir === "Ю" || dir === "W" || dir === "З") dec = -dec;
+        return { dec, dir };
+      };
+      const c1 = parseOneDMS(dmsMatches[0]);
+      const c2 = parseOneDMS(dmsMatches[1]);
+      let lat = c1.dec;
+      let lng = c2.dec;
+      if (["E", "W", "В", "З"].includes(c1.dir) || ["N", "S", "С", "Ю"].includes(c2.dir)) {
+        lat = c2.dec;
+        lng = c1.dec;
+      }
+      return { lat, lng };
+    }
+
+    // 3. Decimal formats: comma as separator vs decimal separator
+    let norm = s;
+    if (/;|\/|\s{2,}|[°'"NnSsEeWwСсЮюВвЗз]/.test(norm) || (norm.match(/,/g) || []).length > 1) {
+      norm = norm.replace(/(\d+),(\d+)/g, "$1.$2");
+    } else if (/^\s*(-?\d+),(\d+)\s+(-?\d+),(\d+)\s*$/.test(norm)) {
+      norm = norm.replace(/^\s*(-?\d+),(\d+)\s+(-?\d+),(\d+)\s*$/, "$1.$2 $3.$4");
+    }
+
+    let isSouth = /[SsЮю]/.test(norm);
+    let isWest = /[WwЗз]/.test(norm);
+
+    const clean = norm.replace(/[,;|\/\\]/g, " ").replace(/[°'"NnSsEeWwСсЮюВвЗз]/g, " ");
+    const nums = clean.split(/\s+/).filter(Boolean).map(Number).filter(n => !isNaN(n));
+    if (nums.length >= 2) {
+      let lat = nums[0];
+      let lng = nums[1];
+      if (isSouth && lat > 0) lat = -lat;
+      if (isWest && lng > 0) lng = -lng;
+
+      if (Math.abs(lat) > 90 && Math.abs(lng) <= 90) {
+        [lat, lng] = [lng, lat];
+      } else if (Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        if (lat < 40 && lng >= 50 && lng <= 80 && nums[0] < nums[1]) {
+          if (lng >= 41 && lng <= 82 && lat >= 19 && lat <= 180) {
+            [lat, lng] = [lng, lat];
+          }
+        }
+      }
+      return { lat, lng };
+    }
+    return null;
+  }
+
+  function showCoordMarker(lat, lng, opts = {}) {
+    if (coordMarker) {
+      map.removeLayer(coordMarker);
+      coordMarker = null;
+    }
+    const pinIcon = L.divIcon({
+      className: "coord-target-pin-wrap",
+      html: `<div class="coord-target-pin"><div class="coord-target-ring"></div><div class="coord-target-dot"></div></div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+    });
+
+    coordMarker = L.marker([lat, lng], { icon: pinIcon, zIndexOffset: 1000 }).addTo(map);
+
+    const latStr = lat.toFixed(5);
+    const lngStr = lng.toFixed(5);
+    const title = opts.title ? esc(opts.title) : "Выбранные координаты";
+
+    const popupContent = document.createElement("div");
+    popupContent.className = "coord-popup-card";
+    popupContent.innerHTML = `
+      <div class="coord-popup-title">${title}</div>
+      <div class="coord-popup-coords">${latStr}° с. ш., ${lngStr}° в. д.</div>
+      <div class="coord-popup-btns">
+        <button type="button" class="btn-primary-action coord-btn-upload">+ Загрузить сюда материал</button>
+        <button type="button" class="btn coord-btn-copy">Скопировать координаты</button>
+      </div>
+    `;
+
+    popupContent.querySelector(".coord-btn-upload").onclick = () => {
+      coordMarker.closePopup();
+      if (!state.user) {
+        openAuth(() => openUploadForm(lat, lng));
+      } else {
+        openUploadForm(lat, lng);
+      }
+    };
+
+    popupContent.querySelector(".coord-btn-copy").onclick = async () => {
+      const text = `${latStr}, ${lngStr}`;
+      try {
+        await navigator.clipboard.writeText(text);
+        toast("Координаты скопированы");
+      } catch (_) {
+        toast(text);
+      }
+    };
+
+    coordMarker.bindPopup(popupContent, {
+      offset: [0, -10],
+      closeButton: true,
+      autoClose: false,
+    });
+
+    if (opts.openPopup !== false) {
+      coordMarker.openPopup();
+    }
+    return coordMarker;
+  }
+
+  function jumpToCoords(lat, lng, opts = {}) {
+    if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+      toast("Некорректные координаты");
+      return false;
+    }
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      toast("Координаты выходят за границы карты");
+      return false;
+    }
+
+    const zoom = opts.zoom || Math.max(map.getZoom(), 12);
+    map.flyTo([lat, lng], zoom, { duration: 1.1 });
+    showCoordMarker(lat, lng, opts);
+    return true;
+  }
+  window.jumpToCoords = jumpToCoords;
+
+  // Right-click on map opens coordinates popup
+  map.on("contextmenu", (e) => {
+    showCoordMarker(e.latlng.lat, e.latlng.lng, {
+      title: "Точка на карте",
+      openPopup: true,
+    });
+  });
+
+  // Topbar coordinate input form
+  const coordForm = $("#coord-form");
+  const coordInput = $("#coord-input");
+  if (coordForm && coordInput) {
+    coordForm.onsubmit = (e) => {
+      e.preventDefault();
+      const val = coordInput.value.trim();
+      if (!val) {
+        toast("Введите координаты: широта, долгота");
+        return;
+      }
+      const parsed = parseCoords(val);
+      if (!parsed) {
+        toast("Не удалось распознать формат координат");
+        return;
+      }
+      const ok = jumpToCoords(parsed.lat, parsed.lng, {
+        zoom: 13,
+        title: `Координаты: ${parsed.lat.toFixed(4)}, ${parsed.lng.toFixed(4)}`,
+      });
+      if (ok) {
+        toast(`Переход: ${parsed.lat.toFixed(4)}, ${parsed.lng.toFixed(4)}`);
+      }
+    };
+  }
+
   // Floating hover card refs
   const areaCard = $("#area-card");
   const acType = $("#ac-type");
@@ -742,7 +925,7 @@
       ${media}
       <p id="md-desc" style="margin: 12px 0 6px; font-size: 14px; line-height: 1.5;">${
         esc(m.description) || "<span class='hint'>Без описания</span>"}</p>
-      <div class="hint" style="margin-top:10px;">${ICON.pin} ${region ? esc(region) + " · " : ""}${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}
+      <div class="hint" style="margin-top:10px;">${ICON.pin} ${region ? esc(region) + " · " : ""}<button type="button" id="md-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button>
         · ${fmtDate(m.created_at)} · Автор:
         <a href="#" id="md-author" class="link">${esc(m.username)}</a></div>
       ${m.status === "rejected" && m.review_note
@@ -754,6 +937,14 @@
       </div>` : ""}
     `);
     $("#md-author").onclick = (e) => { e.preventDefault(); openProfile(m.user_id, false); };
+    const mdCoords = $("#md-coords");
+    if (mdCoords) {
+      mdCoords.onclick = (e) => {
+        e.preventDefault();
+        closeModal();
+        jumpToCoords(m.lat, m.lng, { zoom: 14, title: m.title });
+      };
+    }
     if (!mine) return;
 
     $("#md-edit-btn").onclick = () => {
@@ -1040,7 +1231,7 @@
       : `<img src="${m.url}" style="max-width:100%;border-radius:12px" />`;
     openModal(`<h2>${esc(m.title)}</h2>${media}
       <p style="margin: 10px 0;">${esc(m.description)}</p>
-      <div class="hint">Автор: ${esc(m.username)} · ${ICON.pin} ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>
+      <div class="hint">Автор: ${esc(m.username)} · ${ICON.pin} <button type="button" id="rv-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button></div>
       <div class="row" style="margin-top:16px">
         <button id="rv-ok" class="ok" style="flex:1;padding:10px;">Одобрить</button>
         <button id="rv-no" class="danger" style="flex:1;padding:10px;">Отклонить</button>
@@ -1052,6 +1243,14 @@
     };
     $("#rv-ok").onclick = () => act("approve");
     $("#rv-no").onclick = () => act("reject");
+    const rvCoords = $("#rv-coords");
+    if (rvCoords) {
+      rvCoords.onclick = (e) => {
+        e.preventDefault();
+        closeModal();
+        jumpToCoords(m.lat, m.lng, { zoom: 14, title: m.title });
+      };
+    }
   }
 
   // ---- BOOT -----------------------------------------------------------------

@@ -183,6 +183,153 @@ body {
   box-shadow: 0 0 8px var(--gold-line);
 }
 
+/* COORDINATE JUMP FORM (TOPBAR) */
+.coord-form {
+  display: flex;
+  align-items: center;
+  background: #141824;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  padding: 2px 3px 2px 9px;
+  gap: 7px;
+  transition: border-color 0.14s ease, background 0.14s ease, box-shadow 0.14s ease;
+  max-width: 280px;
+}
+.coord-form:focus-within {
+  background: #171d2c;
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.06);
+}
+.coord-form-icon {
+  color: var(--dim);
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  flex: none;
+}
+.coord-form input {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  width: 170px;
+  padding: 4px 0;
+}
+.coord-form input::placeholder {
+  color: var(--dim);
+  font-size: 11.5px;
+}
+.coord-form button {
+  background: #1f2637;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  flex: none;
+}
+.coord-form button:hover {
+  background: #2b354d;
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* CLICKABLE COORDINATES IN MODALS / CARDS */
+.coord-link {
+  color: var(--gold-2);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: color 0.12s ease;
+}
+.coord-link:hover {
+  color: var(--gold);
+  text-decoration-style: solid;
+}
+
+/* TARGET PULSE PIN ON MAP */
+.coord-target-pin-wrap {
+  background: transparent !important;
+  border: none !important;
+}
+.coord-target-pin {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  pointer-events: auto;
+}
+.coord-target-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: #c1121f;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+.coord-target-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border: 2px solid #c1121f;
+  border-radius: 50%;
+  animation: coord-pulse 2s infinite ease-out;
+  pointer-events: none;
+}
+@keyframes coord-pulse {
+  0% { transform: scale(0.4); opacity: 1; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* COORDINATE POPUP */
+.coord-popup-card {
+  min-width: 220px;
+  padding: 2px 0;
+}
+.coord-popup-title {
+  font-weight: 700;
+  font-size: 13px;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+.coord-popup-coords {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-family: monospace;
+  margin-bottom: 10px;
+  user-select: all;
+}
+.coord-popup-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coord-popup-btns button {
+  width: 100%;
+  text-align: center;
+}
+
 .spacer { flex: 1; }
 .hint {
   color: var(--muted);
