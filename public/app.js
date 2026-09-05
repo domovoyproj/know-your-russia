@@ -95,9 +95,12 @@
     minZoom: 2,
     worldCopyJump: true,
     attributionControl: false,
+    zoomControl: false,
   }).setView([62, 94], 3);
   window.kyrMap = map;
 
+  // Bespoke zoom control in bottom-right corner
+  L.control.zoom({ position: "bottomright" }).addTo(map);
 
   // Clean custom attribution control without any flags
   L.control.attribution({
@@ -277,28 +280,173 @@
     });
   });
 
-  // Topbar coordinate input form
-  const coordForm = $("#coord-form");
-  const coordInput = $("#coord-input");
-  if (coordForm && coordInput) {
-    coordForm.onsubmit = (e) => {
+  // ---- SMART OMNI-SEARCH (REGIONS + COORDINATES) ---------------------------
+  const searchForm = $("#search-form");
+  const searchInput = $("#search-input");
+  const searchClear = $("#search-clear");
+  const searchSuggs = $("#search-suggestions");
+
+  // Searchable index of all 83 subjects
+  const REGION_INDEX = Object.entries(RU_REGIONS).map(([iso, name]) => ({
+    iso,
+    name,
+    aliases: [
+      name.toLowerCase(),
+      iso.toLowerCase(),
+      name.replace(/Республика|область|край|АО|автономный округ|город/gi, "").trim().toLowerCase(),
+    ],
+  }));
+
+  // Common synonyms and regional landmarks
+  const SYNONYMS = {
+    "питер": "RU-SPE", "спб": "RU-SPE", "петербург": "RU-SPE", "санкт-петербург": "RU-SPE",
+    "москва": "RU-MOW", "мск": "RU-MOW",
+    "якутия": "RU-SA", "саха": "RU-SA",
+    "татарстан": "RU-TA", "казань": "RU-TA",
+    "байкал": "RU-IRK", "иркутск": "RU-IRK",
+    "бурятия": "RU-BU", "улан-удэ": "RU-BU",
+    "кузбасс": "RU-KEM", "кемерово": "RU-KEM",
+    "камчатка": "RU-KAM",
+    "сахалин": "RU-SAK",
+    "алтай": "RU-ALT", "барнаул": "RU-ALT",
+    "карелия": "RU-KR",
+    "чукотка": "RU-CHU",
+    "кавказ": "RU-KB", "кабардино-балкария": "RU-KB", "эльбрус": "RU-KB",
+    "дагестан": "RU-DA", "махачкала": "RU-DA",
+    "владивосток": "RU-PRI", "приморье": "RU-PRI",
+    "мурманск": "RU-MUR", "кольский": "RU-MUR",
+    "сочи": "RU-KDA", "краснодар": "RU-KDA", "кубань": "RU-KDA",
+    "калининград": "RU-KGD", "янтарь": "RU-KGD",
+    "екатеринбург": "RU-SVE", "урал": "RU-SVE",
+  };
+
+  function selectRegion(isoOrName) {
+    if (!isoOrName) return false;
+    const targetIso = SYNONYMS[isoOrName.toLowerCase()] || isoOrName;
+    let foundLayer = null;
+
+    areasLayer.eachLayer((layer) => {
+      const p = layer.feature && layer.feature.properties;
+      if (!p) return;
+      if (p.shapeISO === targetIso || p.iso === targetIso || p.name === isoOrName || getAreaTitle(p) === isoOrName) {
+        foundLayer = layer;
+      }
+    });
+
+    if (foundLayer) {
+      map.fitBounds(foundLayer.getBounds(), { padding: [50, 50], maxZoom: 7, duration: 1.1 });
+      foundLayer.setStyle(highlightStyle);
+      foundLayer.bringToFront();
+      showAreaCard(foundLayer.feature.properties, foundLayer.feature);
+      if (searchSuggs) searchSuggs.classList.add("hidden");
+      toast(`Субъект: ${getAreaTitle(foundLayer.feature.properties)}`);
+      return true;
+    }
+    return false;
+  }
+
+  function renderSuggestions(query) {
+    if (!searchSuggs) return;
+    if (!query) {
+      searchSuggs.innerHTML = "";
+      searchSuggs.classList.add("hidden");
+      return;
+    }
+    const q = query.trim().toLowerCase();
+    const matches = [];
+
+    if (SYNONYMS[q]) {
+      const synIso = SYNONYMS[q];
+      const match = REGION_INDEX.find(r => r.iso === synIso);
+      if (match && !matches.includes(match)) matches.push(match);
+    }
+
+    for (const r of REGION_INDEX) {
+      if (matches.length >= 6) break;
+      if (matches.includes(r)) continue;
+      if (r.aliases.some(a => a.includes(q))) {
+        matches.push(r);
+      }
+    }
+
+    if (!matches.length) {
+      searchSuggs.innerHTML = "";
+      searchSuggs.classList.add("hidden");
+      return;
+    }
+
+    searchSuggs.innerHTML = matches.map((m) => `
+      <div class="suggestion-item" data-iso="${m.iso}" data-name="${esc(m.name)}" tabindex="0">
+        <span class="suggestion-title">${esc(m.name)}</span>
+        <span class="suggestion-meta">Субъект РФ</span>
+      </div>
+    `).join("");
+    searchSuggs.classList.remove("hidden");
+
+    searchSuggs.querySelectorAll(".suggestion-item").forEach((el) => {
+      el.onclick = () => {
+        const iso = el.getAttribute("data-iso");
+        const name = el.getAttribute("data-name");
+        searchInput.value = name;
+        if (searchClear) searchClear.classList.remove("hidden");
+        selectRegion(iso);
+      };
+    });
+  }
+
+  if (searchInput && searchForm) {
+    searchInput.oninput = () => {
+      const val = searchInput.value.trim();
+      if (searchClear) searchClear.classList.toggle("hidden", !val);
+      renderSuggestions(val);
+    };
+
+    if (searchClear) {
+      searchClear.onclick = () => {
+        searchInput.value = "";
+        searchClear.classList.add("hidden");
+        if (searchSuggs) searchSuggs.classList.add("hidden");
+        searchInput.focus();
+      };
+    }
+
+    document.addEventListener("click", (e) => {
+      if (!$("#omni-search")?.contains(e.target)) {
+        if (searchSuggs) searchSuggs.classList.add("hidden");
+      }
+    });
+
+    searchForm.onsubmit = (e) => {
       e.preventDefault();
-      const val = coordInput.value.trim();
-      if (!val) {
-        toast("Введите координаты: широта, долгота");
+      const val = searchInput.value.trim();
+      if (!val) return;
+
+      // 1. Try parsing coordinates
+      const coords = parseCoords(val);
+      if (coords) {
+        if (searchSuggs) searchSuggs.classList.add("hidden");
+        jumpToCoords(coords.lat, coords.lng, {
+          zoom: 13,
+          title: `Координаты: ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`,
+        });
+        toast(`Переход: ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}`);
         return;
       }
-      const parsed = parseCoords(val);
-      if (!parsed) {
-        toast("Не удалось распознать формат координат");
+
+      // 2. Try top suggestion
+      const firstSug = searchSuggs && searchSuggs.querySelector(".suggestion-item");
+      if (firstSug) {
+        const iso = firstSug.getAttribute("data-iso");
+        const name = firstSug.getAttribute("data-name");
+        searchInput.value = name;
+        selectRegion(iso);
         return;
       }
-      const ok = jumpToCoords(parsed.lat, parsed.lng, {
-        zoom: 13,
-        title: `Координаты: ${parsed.lat.toFixed(4)}, ${parsed.lng.toFixed(4)}`,
-      });
-      if (ok) {
-        toast(`Переход: ${parsed.lat.toFixed(4)}, ${parsed.lng.toFixed(4)}`);
+
+      // 3. Direct region select
+      const ok = selectRegion(val);
+      if (!ok) {
+        toast("Регион или координаты не найдены");
       }
     };
   }
@@ -311,6 +459,8 @@
   const acPhotos = $("#ac-photos");
   const acVideos = $("#ac-videos");
   const acBtn = $("#ac-gallery-btn");
+  const acClose = $("#ac-close");
+  const acUploadBtn = $("#ac-upload-btn");
 
   let cardHideTimeout = null;
   const showAreaCard = (props, feature) => {
@@ -318,31 +468,56 @@
     state.activeArea = props;
     state.activeFeature = feature;
     const title = getAreaTitle(props);
-    const typeLabel = props.level === 2 ? "Район / Город" : "Регион РФ";
-    acType.textContent = typeLabel;
-    acName.textContent = title;
+    const typeLabel = props.level === 2 ? "Район / Город" : "Субъект РФ";
+    if (acType) acType.textContent = typeLabel;
+    if (acName) acName.textContent = title;
     const total = props.total || 0;
-    acTotal.textContent = `${total} ${declension(total, ["материал", "материала", "материалов"])}`;
-    acPhotos.textContent = props.photos || 0;
-    acVideos.textContent = props.videos || 0;
-    areaCard.classList.remove("hidden");
+    if (acTotal) acTotal.textContent = `${total} ${declension(total, ["материал", "материала", "материалов"])}`;
+    if (acPhotos) acPhotos.textContent = props.photos || 0;
+    if (acVideos) acVideos.textContent = props.videos || 0;
+    if (areaCard) areaCard.classList.remove("hidden");
   };
 
   const hideAreaCard = () => {
     cardHideTimeout = setTimeout(() => {
-      areaCard.classList.add("hidden");
+      if (areaCard) areaCard.classList.add("hidden");
       state.activeArea = null;
-    }, 200);
+    }, 280);
   };
 
-  areaCard.addEventListener("mouseenter", () => clearTimeout(cardHideTimeout));
-  areaCard.addEventListener("mouseleave", hideAreaCard);
+  if (areaCard) {
+    areaCard.addEventListener("mouseenter", () => clearTimeout(cardHideTimeout));
+    areaCard.addEventListener("mouseleave", hideAreaCard);
+  }
 
-  acBtn.onclick = () => {
-    if (state.activeArea) {
-      openAreaGallery(state.activeArea.level, state.activeArea.id, getAreaTitle(state.activeArea), state.activeFeature);
-    }
-  };
+  if (acClose) {
+    acClose.onclick = () => {
+      if (areaCard) areaCard.classList.add("hidden");
+      state.activeArea = null;
+    };
+  }
+
+  if (acBtn) {
+    acBtn.onclick = () => {
+      if (state.activeArea) {
+        openAreaGallery(state.activeArea.level, state.activeArea.id, getAreaTitle(state.activeArea), state.activeFeature);
+      }
+    };
+  }
+
+  if (acUploadBtn) {
+    acUploadBtn.onclick = () => {
+      if (state.activeArea) {
+        const center = (state.activeFeature && getGeomCenter(state.activeFeature.geometry)) || map.getCenter();
+        const title = getAreaTitle(state.activeArea);
+        if (!state.user) {
+          openAuth(() => openUploadForm(center.lat, center.lng, title));
+        } else {
+          openUploadForm(center.lat, center.lng, title);
+        }
+      }
+    };
+  }
 
   function declension(n, forms) {
     n = Math.abs(n) % 100;
@@ -353,33 +528,33 @@
     return forms[2];
   }
 
-  // ---- POLYGON STYLES -------------------------------------------------------
+  // ---- NOBLE CARTOGRAPHIC POLYGON STYLES ------------------------------------
   function styleArea(feature) {
     const p = feature.properties;
     const total = p.total || 0;
     const isDistrict = p.level === 2;
 
     if (isDistrict) {
-      let strokeColor = "#3b82f6";
-      let weight = 1.6;
-      let fillColor = "#3b82f6";
-      let fillOpacity = 0.08;
+      let strokeColor = "rgba(100, 116, 139, 0.45)";
+      let weight = 1.2;
+      let fillColor = "#111827";
+      let fillOpacity = 0.12;
 
       if (total > 0 && total <= 3) {
-        fillColor = "#2563eb";
-        fillOpacity = 0.22;
-        strokeColor = "#1d4ed8";
-        weight = 1.8;
+        fillColor = "#d9a441";
+        fillOpacity = 0.18;
+        strokeColor = "rgba(217, 164, 65, 0.6)";
+        weight = 1.4;
       } else if (total > 3 && total <= 15) {
-        fillColor = "#d97706";
+        fillColor = "#f59e0b";
         fillOpacity = 0.28;
-        strokeColor = "#b45309";
-        weight = 2;
+        strokeColor = "#d97706";
+        weight = 1.6;
       } else if (total > 15) {
-        fillColor = "#dc2626";
+        fillColor = "#be1622";
         fillOpacity = 0.35;
-        strokeColor = "#991b1b";
-        weight = 2.2;
+        strokeColor = "#dc2626";
+        weight = 1.8;
       }
 
       return {
@@ -387,27 +562,30 @@
         fillOpacity,
         color: strokeColor,
         weight,
-        dashArray: "4, 4",
+        dashArray: "3, 3",
         opacity: 0.85,
       };
     } else {
-      let strokeColor = "#475569";
-      let weight = 1.8;
-      let fillColor = "#3b82f6";
-      let fillOpacity = 0.06;
+      let strokeColor = "rgba(255, 255, 255, 0.18)";
+      let weight = 1.3;
+      let fillColor = "#0f172a";
+      let fillOpacity = 0.18;
 
       if (total > 0 && total <= 3) {
-        fillColor = "#2563eb";
-        fillOpacity = 0.2;
-        strokeColor = "#1d4ed8";
+        fillColor = "#d9a441";
+        fillOpacity = 0.16;
+        strokeColor = "rgba(217, 164, 65, 0.55)";
+        weight = 1.5;
       } else if (total > 3 && total <= 15) {
-        fillColor = "#d97706";
+        fillColor = "#f59e0b";
         fillOpacity = 0.26;
-        strokeColor = "#b45309";
+        strokeColor = "#d97706";
+        weight = 1.8;
       } else if (total > 15) {
-        fillColor = "#dc2626";
+        fillColor = "#be1622";
         fillOpacity = 0.32;
-        strokeColor = "#991b1b";
+        strokeColor = "#dc2626";
+        weight = 2;
       }
 
       return {
@@ -415,19 +593,18 @@
         fillOpacity,
         color: strokeColor,
         weight,
-        opacity: 0.85,
+        opacity: 0.9,
       };
     }
   }
 
   const highlightStyle = {
-    weight: 2.5,
-    color: "#ffffff",
+    weight: 2.2,
+    color: "#f59e0b",
     dashArray: null,
-    fillColor: "#2563eb",
-    fillOpacity: 0.3,
+    fillColor: "rgba(245, 158, 11, 0.22)",
+    fillOpacity: 1,
   };
-
   function onEachArea(feature, layer) {
     const p = feature.properties;
     const title = getAreaTitle(p);
@@ -507,8 +684,10 @@
       areasLayer.setStyle(styleArea);
       areasLayer.eachLayer((layer) => onEachArea(layer.feature, layer));
       const count = data.features.length;
-      const label = level === "1" ? "областей" : "районов";
-      $("#hint").textContent = `В видимой зоне: ${count} ${label}`;
+      const label = level === "1"
+        ? declension(count, ["субъект РФ", "субъекта РФ", "субъектов РФ"])
+        : declension(count, ["район", "района", "районов"]);
+      $("#hint").textContent = `${count} ${label} в кадре`;
     }
   }
 
@@ -546,9 +725,8 @@
         <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
       </div>
       <h2 class="modal-title">${esc(title)}</h2>
-      <div class="modal-loader"><div class="spinner"></div><span>Загрузка материалов…</span></div>
-    `);
-
+      <div class="modal-loader"><div class="spinner"></div><span>Загрузка фотохроники…</span></div>
+    `, true);
     const handleAreaUpload = () => {
       const center = (feature && getGeomCenter(feature.geometry)) || map.getCenter();
       if (!state.user) {
@@ -604,8 +782,7 @@
           <button id="ag-add" class="btn-subtle">+ Добавить ещё</button>
         </div>
         <div class="grid">${items.map(cardHtml).join("")}</div>
-      `);
-      $("#ag-add").onclick = handleAreaUpload;
+      `, true);
       modalBody.querySelectorAll("[data-media]").forEach((el) =>
         (el.onclick = () => openMedia(el.getAttribute("data-media"))));
     } catch (e) {
@@ -615,9 +792,19 @@
 
   // ---- MODAL ----------------------------------------------------------------
   const modal = $("#modal");
+  const modalCard = $(".modal-card");
   const modalBody = $("#modal-body");
-  const openModal = (html) => { modalBody.innerHTML = html; modal.classList.remove("hidden"); };
-  const closeModal = () => { modal.classList.add("hidden"); modalBody.innerHTML = ""; };
+  const openModal = (html, wide = false) => {
+    modalBody.innerHTML = html;
+    if (wide && modalCard) modalCard.classList.add("modal-wide");
+    else if (modalCard) modalCard.classList.remove("modal-wide");
+    modal.classList.remove("hidden");
+  };
+  const closeModal = () => {
+    modal.classList.add("hidden");
+    if (modalCard) modalCard.classList.remove("modal-wide");
+    modalBody.innerHTML = "";
+  };
   modal.addEventListener("click", (e) => {
     if (e.target === modal || e.target.hasAttribute("data-close")) closeModal();
   });
