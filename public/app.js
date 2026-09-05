@@ -283,35 +283,63 @@
 
   // ---- AREA GALLERY MODAL ---------------------------------------------------
   async function openAreaGallery(level, id, title) {
+    const levelName = level === 2 ? "Район / Город" : "Субъект РФ";
     openModal(`
-      <div class="ac-header">
-        <span class="ac-badge">${level === 2 ? "Район / Город" : "Регион"}</span>
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
       </div>
-      <h2>${esc(title)}</h2>
-      <p class="hint">Загрузка материалов…</p>
+      <h2 class="modal-title">${esc(title)}</h2>
+      <div class="modal-loader"><div class="spinner"></div><span>Загрузка материалов…</span></div>
     `);
     try {
       const data = await api(`/api/areas/${level}/${id}/media`);
       const items = data.media || [];
       if (!items.length) {
         openModal(`
-          <div class="ac-header"><span class="ac-badge">${level === 2 ? "Район / Город" : "Регион"}</span></div>
-          <h2>${esc(title)}</h2>
-          <p class="hint" style="margin: 20px 0;">В этой зоне пока нет подтверждённых фотографий или видео.</p>
-          <button id="ag-upload" class="primary">+ Добавить фото или видео сюда</button>
+          <div class="modal-top">
+            <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
+          </div>
+          <h2 class="modal-title">${esc(title)}</h2>
+          <div class="empty-state">
+            <div class="empty-icon-wrap">
+              <div class="empty-icon-glow"></div>
+              <div class="empty-icon">
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
+                  <circle cx="12" cy="13" r="3"/>
+                </svg>
+              </div>
+            </div>
+            <h3 class="empty-title">Пока здесь нет снимков и видео</h3>
+            <p class="empty-desc">Будьте первым, кто покажет красоту этого края! Загрузите яркие фотографии или видеоролики — после быстрой модерации они появятся на интерактивной карте страны.</p>
+            <button id="ag-upload" class="empty-cta">
+              <span class="cta-plus">+</span>
+              <span>Добавить первый материал сюда</span>
+            </button>
+          </div>
         `);
         $("#ag-upload").onclick = () => { closeModal(); startUpload(); };
         return;
       }
 
+      const photos = items.filter(i => i.kind !== "video").length;
+      const videos = items.filter(i => i.kind === "video").length;
+
       openModal(`
-        <div class="ac-header">
-          <span class="ac-badge">${level === 2 ? "Район / Город" : "Регион"}</span>
-          <span class="ac-count">${items.length} ${declension(items.length, ["материал", "материала", "материалов"])}</span>
+        <div class="modal-top">
+          <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
+          <div class="modal-meta-chips">
+            <span class="meta-chip">📷 ${photos} ${declension(photos, ["фото", "фото", "фото"])}</span>
+            <span class="meta-chip">🎥 ${videos} ${declension(videos, ["видео", "видео", "видео"])}</span>
+          </div>
         </div>
-        <h2>${esc(title)}</h2>
+        <div class="modal-header-row">
+          <h2 class="modal-title">${esc(title)}</h2>
+          <button id="ag-add" class="btn-subtle">+ Добавить ещё</button>
+        </div>
         <div class="grid">${items.map(cardHtml).join("")}</div>
       `);
+      $("#ag-add").onclick = () => { closeModal(); startUpload(); };
       modalBody.querySelectorAll("[data-media]").forEach((el) =>
         (el.onclick = () => openMedia(el.getAttribute("data-media"))));
     } catch (e) {
