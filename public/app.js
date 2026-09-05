@@ -89,6 +89,8 @@
     worldCopyJump: true,
     attributionControl: false,
   }).setView([62, 94], 3);
+  window.kyrMap = map;
+
 
   // Clean custom attribution control without any flags
   L.control.attribution({
