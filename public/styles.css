@@ -26,6 +26,7 @@
   --warn-text: #fde047;
   --err-bg: rgba(153, 27, 27, 0.2);
   --err-border: rgba(239, 68, 68, 0.35);
+
   --err-text: #fca5a5;
 
   --shadow-lg: 0 20px 50px -10px rgba(0, 0, 0, 0.75);
@@ -34,6 +35,8 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+.hidden { display: none !important; }
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--text);
