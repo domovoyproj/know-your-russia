@@ -440,9 +440,11 @@
         ? `<button id="nav-admin">Модерация</button>` : "";
       nav.innerHTML = `
         <button id="nav-upload" class="primary">+ Загрузить</button>
-        <button id="nav-me">Кабинет</button>
         ${admin}
-        <span class="who">${esc(state.user.username)}</span>
+        <button id="nav-me" class="user-chip">
+          ${avatarHtml(state.user, 26)}
+          <span class="who">${esc(state.user.username)}</span>
+        </button>
         <button id="nav-logout">Выход</button>`;
       $("#nav-upload").onclick = startUpload;
       $("#nav-me").onclick = () => openProfile(state.user.id, true);
@@ -692,41 +694,308 @@
     };
   }
 
+  // ---- FORMATTERS -----------------------------------------------------------
+  const STATUS_RU = { approved: "Одобрено", pending: "На модерации", rejected: "Отклонено" };
+  const regionName = (m) => (m.region_iso && RU_REGIONS[m.region_iso]) || m.region || null;
+
+  const fmtBytes = (b) => {
+    if (!b) return "0 МБ";
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} КБ`;
+    if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} МБ`;
+    return `${(b / 1024 / 1024 / 1024).toFixed(2)} ГБ`;
+  };
+
+  const fmtDate = (s) => {
+    if (!s) return "";
+    const d = new Date(s.replace(" ", "T") + "Z");
+    if (isNaN(d)) return s;
+    return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  };
+
+  const avatarHtml = (user, size) => user.avatar
+    ? `<img class="avatar" style="width:${size}px;height:${size}px" src="${user.avatar}" alt="" />`
+    : `<div class="avatar avatar-fallback" style="width:${size}px;height:${size}px;font-size:${Math.round(size / 2.4)}px">${esc(
+        (user.username || "?").slice(0, 1).toUpperCase())}</div>`;
+
   // ---- MEDIA DETAIL ---------------------------------------------------------
-  async function openMedia(id) {
+  async function openMedia(id, onChange) {
     let m;
     try { m = await api(`/api/media/${id}`); } catch (e) { return; }
+    const mine = state.user && (state.user.id === m.user_id || state.user.is_admin);
     const media = m.kind === "video"
       ? `<video src="${m.url}" controls autoplay style="max-width:100%;border-radius:12px;display:block;"></video>`
       : `<img src="${m.url}" style="max-width:100%;border-radius:12px;display:block;" />`;
+    const region = regionName(m);
     openModal(`
-      <h2>${esc(m.title)}</h2>
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>Материал</div>
+        <span class="badge ${m.status}">${STATUS_RU[m.status] || m.status}</span>
+      </div>
+      <h2 class="modal-title" id="md-title">${esc(m.title)}</h2>
       ${media}
-      <p style="margin: 12px 0 6px; font-size: 14px; line-height: 1.5;">${esc(m.description) || "<span class='hint'>Без описания</span>"}</p>
-      <div class="hint" style="margin-top:10px;">📍 ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)} · Автор:
-        <a href="#" id="md-author" style="color:#38bdf8;font-weight:600;">${esc(m.username)}</a> ·
-        <span class="badge ${m.status}">${m.status}</span></div>`);
+      <p id="md-desc" style="margin: 12px 0 6px; font-size: 14px; line-height: 1.5;">${
+        esc(m.description) || "<span class='hint'>Без описания</span>"}</p>
+      <div class="hint" style="margin-top:10px;">📍 ${region ? esc(region) + " · " : ""}${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}
+        · ${fmtDate(m.created_at)} · Автор:
+        <a href="#" id="md-author" class="link">${esc(m.username)}</a></div>
+      ${m.status === "rejected" && m.review_note
+        ? `<div class="notice notice-err" style="margin-top:12px">Причина отклонения: ${esc(m.review_note)}</div>` : ""}
+      <div id="md-edit"></div>
+      ${mine ? `<div class="modal-actions" style="margin-top:16px">
+        <button type="button" id="md-del" class="btn-ghost danger">Удалить</button>
+        <button type="button" id="md-edit-btn" class="btn-primary-action">Редактировать</button>
+      </div>` : ""}
+    `);
     $("#md-author").onclick = (e) => { e.preventDefault(); openProfile(m.user_id, false); };
+    if (!mine) return;
+
+    $("#md-edit-btn").onclick = () => {
+      $("#md-edit").innerHTML = `
+        <div class="edit-box">
+          <label for="ed-title">Название</label>
+          <input id="ed-title" maxlength="120" value="${esc(m.title)}" />
+          <label for="ed-desc">Описание</label>
+          <textarea id="ed-desc" rows="3" maxlength="2000">${esc(m.description)}</textarea>
+          <div class="msg" id="ed-msg"></div>
+          <div class="modal-actions">
+            <button type="button" id="ed-cancel" class="btn-ghost">Отмена</button>
+            <button type="button" id="ed-save" class="btn-primary-action">Сохранить</button>
+          </div>
+        </div>`;
+      $("#ed-cancel").onclick = () => { $("#md-edit").innerHTML = ""; };
+      $("#ed-save").onclick = async () => {
+        const title = $("#ed-title").value.trim();
+        if (!title) return ($("#ed-msg").textContent = "Название не может быть пустым");
+        $("#ed-save").disabled = true;
+        try {
+          const res = await api(`/api/media/${id}`, {
+            method: "PATCH",
+            json: { title, description: $("#ed-desc").value.trim() },
+          });
+          if (onChange) onChange();
+          reloadView();
+          openMedia(id, onChange);
+          if (res.requeued) toast("Материал изменён и отправлен на повторную модерацию");
+        } catch (e) {
+          $("#ed-save").disabled = false;
+          $("#ed-msg").textContent = e.message;
+        }
+      };
+    };
+
+    $("#md-del").onclick = async () => {
+      $("#md-edit").innerHTML = `
+        <div class="notice notice-warn" style="margin-top:14px">
+          Удалить материал безвозвратно вместе с файлом?
+          <div class="modal-actions" style="margin-top:10px">
+            <button type="button" id="dl-no" class="btn-ghost">Нет</button>
+            <button type="button" id="dl-yes" class="btn-ghost danger">Да, удалить</button>
+          </div>
+        </div>`;
+      $("#dl-no").onclick = () => { $("#md-edit").innerHTML = ""; };
+      $("#dl-yes").onclick = async () => {
+        $("#dl-yes").disabled = true;
+        try {
+          await api(`/api/media/${id}`, { method: "DELETE" });
+          closeModal();
+          reloadView();
+          if (onChange) onChange();
+          toast("Материал удалён");
+        } catch (e) {
+          $("#dl-yes").disabled = false;
+          $("#md-edit").innerHTML = `<div class="notice notice-err">${esc(e.message)}</div>`;
+        }
+      };
+    };
   }
 
-  // ---- PROFILES -------------------------------------------------------------
-  async function openProfile(userId, self) {
+  // ---- CABINET / PROFILES ---------------------------------------------------
+  const CAB_TABS = [
+    ["all", "Все"],
+    ["approved", "Одобрено"],
+    ["pending", "На модерации"],
+    ["rejected", "Отклонено"],
+    ["settings", "Настройки"],
+  ];
+
+  async function openProfile(userId, self, tab = "all") {
+    openModal(`<div class="modal-loader"><div class="spinner"></div><span>Загрузка профиля...</span></div>`);
     let data;
     try {
-      data = self
-        ? { user: state.user, media: await api("/api/me/media") }
-        : await api(`/api/users/${userId}`);
-    } catch (e) { return openModal(`<h2>Ошибка</h2><p>${esc(e.message)}</p>`); }
+      data = self ? await api("/api/me/profile") : await api(`/api/users/${userId}`);
+    } catch (e) {
+      return openModal(`<h2 class="modal-title">Ошибка</h2><p>${esc(e.message)}</p>`);
+    }
+    if (self) setAuth(state.token, data.user);
+    renderProfile(data, self, tab);
+  }
+
+  function renderProfile(data, self, tab) {
+    const u = data.user;
+    const s = data.stats;
     const media = data.media || [];
-    const title = self ? "Личный кабинет" : `Профиль: ${esc(data.user.username)}`;
-    const cards = media.length
-      ? `<div class="grid">${media.map(cardHtml).join("")}</div>`
-      : `<p class="hint">${self ? "У вас пока нет загрузок." : "Нет опубликованных материалов."}</p>`;
-    openModal(`<h2>${title}</h2>
-      ${self ? `<p class="hint">Здесь отображаются все ваши материалы и их статусы модерации.</p>` : ""}
-      ${cards}`);
+    const refresh = () => openProfile(u.id, self, tab);
+
+    const geo = (data.geography || []).map((g) =>
+      `<span class="geo-chip">${esc((g.iso && RU_REGIONS[g.iso]) || g.name)}<b>${g.count}</b></span>`).join("");
+
+    const statBlock = (label, value, cls = "") =>
+      `<div class="stat-box ${cls}"><span class="stat-value">${value}</span><span class="stat-label">${label}</span></div>`;
+
+    const stats = self
+      ? statBlock("всего", s.total) + statBlock("одобрено", s.approved, "s-ok")
+        + statBlock("на модерации", s.pending, "s-warn") + statBlock("отклонено", s.rejected, "s-err")
+        + statBlock("фото", s.photos) + statBlock("видео", s.videos) + statBlock("на диске", fmtBytes(s.bytes))
+      : statBlock("опубликовано", s.approved) + statBlock("фото", s.photos)
+        + statBlock("видео", s.videos) + statBlock("регионов", (data.geography || []).length);
+
+    const tabsHtml = self
+      ? `<div class="tabs cab-tabs">${CAB_TABS.map(([k, label]) =>
+          `<button data-tab="${k}" class="${k === tab ? "active" : ""}">${label}${
+            k === "pending" && s.pending ? ` <b class="tab-count">${s.pending}</b>` : ""}</button>`).join("")}</div>`
+      : "";
+
+    const list = tab === "all" ? media : media.filter((m) => m.status === tab);
+    const body = tab === "settings"
+      ? settingsHtml(u)
+      : list.length
+        ? `<div class="grid">${list.map(cardHtml).join("")}</div>`
+        : `<div class="empty-state">
+             <div class="empty-icon-wrap"><div class="empty-icon-glow"></div>
+               <div class="empty-icon">📷</div></div>
+             <h3 class="empty-title">${self ? "Здесь пока пусто" : "Нет опубликованных материалов"}</h3>
+             <p class="empty-desc">${self
+               ? (tab === "all" ? "Загрузите первое фото или видео - после модерации оно появится на карте."
+                   : "В этой категории материалов нет.")
+               : "Пользователь ещё не опубликовал материалы."}</p>
+             ${self && tab === "all"
+               ? `<button id="cab-upload" class="empty-cta"><span class="cta-plus">+</span><span>Загрузить материал</span></button>`
+               : ""}
+           </div>`;
+
+    openModal(`
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>${self ? "Личный кабинет" : "Профиль"}</div>
+        ${u.is_admin ? `<span class="badge approved">админ</span>` : ""}
+      </div>
+      <div class="profile-head">
+        ${avatarHtml(u, 76)}
+        <div class="profile-id">
+          <h2 class="modal-title" style="margin:0">${esc(u.username)}</h2>
+          <div class="hint">С нами с ${fmtDate(u.created_at)}</div>
+          ${u.bio ? `<p class="profile-bio">${esc(u.bio)}</p>`
+            : self ? `<p class="hint" style="margin:8px 0 0">Расскажите о себе в настройках.</p>` : ""}
+        </div>
+        ${self ? `<button id="cab-add" class="btn-primary-action">+ Загрузить</button>` : ""}
+      </div>
+      <div class="stat-row">${stats}</div>
+      ${geo ? `<div class="geo-row"><span class="geo-label">География</span>${geo}</div>` : ""}
+      ${tabsHtml}
+      <div id="cab-body">${body}</div>
+    `);
+
+    if (self) {
+      modalBody.querySelectorAll("[data-tab]").forEach((b) =>
+        (b.onclick = () => renderProfile(data, self, b.getAttribute("data-tab"))));
+      const add = $("#cab-add"); if (add) add.onclick = () => { closeModal(); startUpload(); };
+      const cta = $("#cab-upload"); if (cta) cta.onclick = () => { closeModal(); startUpload(); };
+      if (tab === "settings") wireSettings(u, refresh);
+    }
     modalBody.querySelectorAll("[data-media]").forEach((el) =>
-      (el.onclick = () => openMedia(el.getAttribute("data-media"))));
+      (el.onclick = () => openMedia(el.getAttribute("data-media"), refresh)));
+  }
+
+  const settingsHtml = (u) => `
+    <div class="settings">
+      <section class="settings-block">
+        <h3 class="settings-title">Аватар</h3>
+        <div class="avatar-row">
+          ${avatarHtml(u, 64)}
+          <div>
+            <input id="st-avatar" type="file" accept="image/*" class="file-input-hidden" />
+            <button type="button" id="st-avatar-btn" class="btn-ghost">Выбрать изображение</button>
+            <div class="hint" style="margin-top:6px">JPG, PNG, WEBP до 4 МБ</div>
+          </div>
+        </div>
+        <div class="msg" id="st-avatar-msg"></div>
+      </section>
+      <section class="settings-block">
+        <h3 class="settings-title">О себе</h3>
+        <textarea id="st-bio" rows="3" maxlength="500" placeholder="Например: снимаю Байкал и Приморье">${esc(u.bio || "")}</textarea>
+        <div class="modal-actions">
+          <div class="msg" id="st-bio-msg"></div>
+          <button type="button" id="st-bio-save" class="btn-primary-action">Сохранить</button>
+        </div>
+      </section>
+      <section class="settings-block">
+        <h3 class="settings-title">Смена пароля</h3>
+        <label for="st-cur">Текущий пароль</label>
+        <input id="st-cur" type="password" autocomplete="current-password" />
+        <label for="st-new">Новый пароль</label>
+        <input id="st-new" type="password" autocomplete="new-password" />
+        <div class="modal-actions">
+          <div class="msg" id="st-pass-msg"></div>
+          <button type="button" id="st-pass-save" class="btn-primary-action">Обновить пароль</button>
+        </div>
+      </section>
+    </div>`;
+
+  function wireSettings(u, refresh) {
+    $("#st-avatar-btn").onclick = () => $("#st-avatar").click();
+    $("#st-avatar").onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      $("#st-avatar-msg").textContent = "Загрузка...";
+      try {
+        const user = await api("/api/me/avatar", { method: "POST", body: fd });
+        setAuth(state.token, user);
+        toast("Аватар обновлён");
+        refresh();
+      } catch (err) { $("#st-avatar-msg").textContent = err.message; }
+    };
+
+    $("#st-bio-save").onclick = async () => {
+      $("#st-bio-save").disabled = true;
+      try {
+        const user = await api("/api/me", { method: "PATCH", json: { bio: $("#st-bio").value } });
+        setAuth(state.token, user);
+        toast("Профиль обновлён");
+        refresh();
+      } catch (err) {
+        $("#st-bio-save").disabled = false;
+        $("#st-bio-msg").textContent = err.message;
+      }
+    };
+
+    $("#st-pass-save").onclick = async () => {
+      const current = $("#st-cur").value, next = $("#st-new").value;
+      if (!current || !next) return ($("#st-pass-msg").textContent = "Заполните оба поля");
+      $("#st-pass-save").disabled = true;
+      try {
+        await api("/api/me/password", { method: "POST", json: { current, next } });
+        $("#st-cur").value = ""; $("#st-new").value = "";
+        $("#st-pass-msg").textContent = "";
+        toast("Пароль изменён");
+      } catch (err) { $("#st-pass-msg").textContent = err.message; }
+      $("#st-pass-save").disabled = false;
+    };
+  }
+
+  // ---- TOAST ----------------------------------------------------------------
+  let toastTimer = null;
+  function toast(text) {
+    let el = $("#toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "toast";
+      document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.classList.add("visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("visible"), 2600);
   }
 
   const cardHtml = (m) => `
@@ -738,7 +1007,10 @@
           : `<img class="thumb" src="${m.url}" loading="lazy" />`}
       <div class="meta">
         <div class="t">${esc(m.title)}</div>
-        ${m.status ? `<span class="badge ${m.status}">${m.status}</span>` : ""}
+        <div class="card-foot">
+          ${m.status ? `<span class="badge ${m.status}">${STATUS_RU[m.status] || m.status}</span>` : ""}
+          ${regionName(m) ? `<span class="card-region">${esc(regionName(m))}</span>` : ""}
+        </div>
       </div>
     </div>`;
 

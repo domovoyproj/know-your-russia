@@ -4,11 +4,12 @@ import { db } from "./lib/db.js";
 import {
   issueToken, currentUser, hashPassword, checkPassword,
 } from "./lib/auth.js";
-import { storeUpload, UPLOAD_ROOT, hasFfmpeg } from "./lib/media.js";
-import { areasInBbox, featureById, pointInGeom } from "./lib/geo.js";
+import { storeUpload, storeAvatar, deleteFiles, UPLOAD_ROOT, hasFfmpeg } from "./lib/media.js";
+import { areasInBbox, featureById, pointInGeom, areaOfPoint } from "./lib/geo.js";
 
 const PORT = Number(Bun.env.PORT) || 3000;
 const MAX_UPLOAD = Number(Bun.env.MAX_UPLOAD_BYTES) || 512 * 1024 * 1024;
+const AVATAR_MAX = 4 * 1024 * 1024;
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -26,11 +27,68 @@ const publicMedia = (m) => ({
   thumb: m.thumb ? `/uploads/${m.thumb}` : null,
   lat: m.lat,
   lng: m.lng,
+  size: m.size,
   status: m.status,
+  review_note: m.review_note || "",
+  reviewed_at: m.reviewed_at || null,
   user_id: m.user_id,
   username: m.username,
   created_at: m.created_at,
 });
+
+const publicUser = (u) => ({
+  id: u.id,
+  username: u.username,
+  is_admin: u.is_admin,
+  created_at: u.created_at,
+  bio: u.bio || "",
+  avatar: u.avatar ? `/uploads/${u.avatar}` : null,
+});
+
+// Profile counters. `ownView` includes pending/rejected rows; public view does not.
+function statsFor(userId, ownView) {
+  const rows = db.query(
+    `SELECT status, kind, COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes
+     FROM media WHERE user_id = ? GROUP BY status, kind`
+  ).all(userId);
+  const s = { total: 0, approved: 0, pending: 0, rejected: 0, photos: 0, videos: 0, bytes: 0 };
+  for (const r of rows) {
+    if (!ownView && r.status !== "approved") continue;
+    s.total += r.n;
+    s[r.status] += r.n;
+    if (r.kind === "video") s.videos += r.n; else s.photos += r.n;
+    s.bytes += r.bytes;
+  }
+  return s;
+}
+
+// Media rows carrying the region they fall into — powers profile geography.
+// The ISO code travels along so the client can show the Russian region name.
+const withArea = (rows) => rows.map((m) => {
+  const area = areaOfPoint(m.lng, m.lat, 1);
+  return {
+    ...publicMedia(m),
+    region: area ? area.name : null,
+    region_iso: area ? area.iso : null,
+  };
+});
+
+const geographyOf = (media) => {
+  const byRegion = new Map();
+  for (const m of media) {
+    if (!m.region) continue;
+    const cur = byRegion.get(m.region) || { name: m.region, iso: m.region_iso, count: 0 };
+    cur.count++;
+    byRegion.set(m.region, cur);
+  }
+  return [...byRegion.values()].sort((a, b) => b.count - a.count);
+};
+
+const userMedia = (userId, approvedOnly) => withArea(db.query(
+  `SELECT m.*, u.username FROM media m JOIN users u ON u.id = m.user_id
+   WHERE m.user_id = ?${approvedOnly ? " AND m.status = 'approved'" : ""}
+   ORDER BY m.created_at DESC`
+).all(userId));
 
 async function serveStatic(baseDir, relPath) {
   const safe = normalize(relPath).replace(/^([/\\.]+)/, "");
@@ -76,8 +134,8 @@ route("POST", "/api/register", async (req) => {
   const info = db
     .query("INSERT INTO users (username, password_hash) VALUES (?, ?)")
     .run(String(username), hash);
-  const user = { id: info.lastInsertRowid, username, is_admin: 0 };
-  return json({ token: issueToken(user), user: { id: user.id, username, is_admin: 0 } });
+  const user = db.query("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid);
+  return json({ token: issueToken(user), user: publicUser(user) });
 });
 
 route("POST", "/api/login", async (req) => {
@@ -86,34 +144,78 @@ route("POST", "/api/login", async (req) => {
   const user = db.query("SELECT * FROM users WHERE username = ?").get(username);
   if (!user || !(await checkPassword(String(password), user.password_hash)))
     return err("invalid credentials", 401);
+  return json({ token: issueToken(user), user: publicUser(user) });
+});
+
+route("GET", "/api/me", (req) => json(publicUser(requireUser(req))));
+
+// Everything the personal cabinet renders in one round-trip.
+route("GET", "/api/me/profile", (req) => {
+  const user = requireUser(req);
+  const media = userMedia(user.id, false);
   return json({
-    token: issueToken(user),
-    user: { id: user.id, username: user.username, is_admin: user.is_admin },
+    user: publicUser(user),
+    stats: statsFor(user.id, true),
+    geography: geographyOf(media),
+    media,
   });
 });
 
-route("GET", "/api/me", (req) => {
+route("PATCH", "/api/me", async (req) => {
   const user = requireUser(req);
-  return json({ id: user.id, username: user.username, is_admin: user.is_admin });
+  const { bio } = await req.json().catch(() => ({}));
+  if (bio === undefined) return err("nothing to update");
+  const next = String(bio).trim().slice(0, 500);
+  db.query("UPDATE users SET bio = ? WHERE id = ?").run(next, user.id);
+  return json(publicUser({ ...user, bio: next }));
 });
 
-route("GET", "/api/me/media", (req) => {
+route("POST", "/api/me/avatar", async (req) => {
   const user = requireUser(req);
-  const rows = db.query(
-    `SELECT m.*, u.username FROM media m JOIN users u ON u.id = m.user_id
-     WHERE m.user_id = ? ORDER BY m.created_at DESC`
-  ).all(user.id);
-  return json(rows.map(publicMedia));
+  const form = await req.formData().catch(() => null);
+  const file = form && form.get("file");
+  if (!(file instanceof File) || file.size === 0) return err("file required");
+  if (file.size > AVATAR_MAX) return err("avatar too large (max 4 MB)", 413);
+
+  let rel;
+  try { rel = await storeAvatar(file); } catch (e) { return err(e.message, 415); }
+  db.query("UPDATE users SET avatar = ? WHERE id = ?").run(rel, user.id);
+  if (user.avatar) deleteFiles(user.avatar);
+  return json(publicUser({ ...user, avatar: rel }));
+});
+
+route("DELETE", "/api/me/avatar", (req) => {
+  const user = requireUser(req);
+  db.query("UPDATE users SET avatar = NULL WHERE id = ?").run(user.id);
+  if (user.avatar) deleteFiles(user.avatar);
+  return json(publicUser({ ...user, avatar: null }));
+});
+
+route("POST", "/api/me/password", async (req) => {
+  const user = requireUser(req);
+  const { current, next } = await req.json().catch(() => ({}));
+  if (!current || !next) return err("current and next password required");
+  if (String(next).length < 6) return err("password too short (min 6)");
+  const row = db.query("SELECT password_hash FROM users WHERE id = ?").get(user.id);
+  if (!(await checkPassword(String(current), row.password_hash)))
+    return err("wrong current password", 403);
+  db.query("UPDATE users SET password_hash = ? WHERE id = ?")
+    .run(await hashPassword(String(next)), user.id);
+  return json({ ok: true });
 });
 
 route("GET", "/api/users/:id", (req, p) => {
-  const u = db.query("SELECT id, username, created_at, is_admin FROM users WHERE id = ?").get(p.id);
+  const u = db.query(
+    "SELECT id, username, created_at, is_admin, bio, avatar FROM users WHERE id = ?"
+  ).get(p.id);
   if (!u) return err("user not found", 404);
-  const media = db.query(
-    `SELECT m.*, u.username FROM media m JOIN users u ON u.id = m.user_id
-     WHERE m.user_id = ? AND m.status = 'approved' ORDER BY m.created_at DESC`
-  ).all(p.id);
-  return json({ user: u, media: media.map(publicMedia) });
+  const media = userMedia(u.id, true);
+  return json({
+    user: publicUser(u),
+    stats: statsFor(u.id, false),
+    geography: geographyOf(media),
+    media,
+  });
 });
 
 // Media upload & points
@@ -245,6 +347,48 @@ route("GET", "/api/media/:id", (req, p) => {
   return json(publicMedia(row));
 });
 
+// Author (or admin) edits their own submission.
+route("PATCH", "/api/media/:id", async (req, p) => {
+  const user = requireUser(req);
+  const row = db.query("SELECT * FROM media WHERE id = ?").get(p.id);
+  if (!row) return err("not found", 404);
+  if (row.user_id !== user.id && !user.is_admin) return err("forbidden", 403);
+
+  const { title, description } = await req.json().catch(() => ({}));
+  const nextTitle = String(title ?? row.title).trim();
+  if (!nextTitle) return err("title required");
+  const nextDesc = String(description ?? row.description).trim().slice(0, 2000);
+
+  // Premoderation invariant: republished text must be re-checked, so an author
+  // editing an approved item sends it back to the queue. Admin edits do not.
+  const requeue = !user.is_admin && row.status === "approved";
+  db.query(
+    `UPDATE media SET title = ?, description = ?, status = ?, review_note = ?,
+     reviewed_by = ?, reviewed_at = ? WHERE id = ?`
+  ).run(
+    nextTitle.slice(0, 120), nextDesc,
+    requeue ? "pending" : row.status,
+    requeue ? "" : row.review_note,
+    requeue ? null : row.reviewed_by,
+    requeue ? null : row.reviewed_at,
+    row.id
+  );
+  const fresh = db.query(
+    `SELECT m.*, u.username FROM media m JOIN users u ON u.id = m.user_id WHERE m.id = ?`
+  ).get(row.id);
+  return json({ ...publicMedia(fresh), requeued: requeue });
+});
+
+route("DELETE", "/api/media/:id", (req, p) => {
+  const user = requireUser(req);
+  const row = db.query("SELECT * FROM media WHERE id = ?").get(p.id);
+  if (!row) return err("not found", 404);
+  if (row.user_id !== user.id && !user.is_admin) return err("forbidden", 403);
+  db.query("DELETE FROM media WHERE id = ?").run(row.id);
+  deleteFiles(row.filename, row.thumb);
+  return json({ id: row.id, deleted: true });
+});
+
 // Admin
 route("GET", "/api/admin/pending", (req) => {
   requireAdmin(req);
@@ -255,14 +399,17 @@ route("GET", "/api/admin/pending", (req) => {
   return json(rows.map(publicMedia));
 });
 
-const review = (status) => (req, p) => {
+const review = (status) => async (req, p) => {
   const admin = requireAdmin(req);
   const m = db.query("SELECT id FROM media WHERE id = ?").get(p.id);
   if (!m) return err("not found", 404);
+  const body = await req.json().catch(() => ({}));
+  const note = String((body && body.note) || "").trim().slice(0, 500);
   db.query(
-    `UPDATE media SET status = ?, reviewed_by = ?, reviewed_at = datetime('now') WHERE id = ?`
-  ).run(status, admin.id, p.id);
-  return json({ id: Number(p.id), status });
+    `UPDATE media SET status = ?, review_note = ?, reviewed_by = ?,
+     reviewed_at = datetime('now') WHERE id = ?`
+  ).run(status, note, admin.id, p.id);
+  return json({ id: Number(p.id), status, review_note: note });
 };
 route("POST", "/api/admin/media/:id/approve", review("approved"));
 route("POST", "/api/admin/media/:id/reject", review("rejected"));
