@@ -163,26 +163,26 @@
   // ---- POLYGON STYLES -------------------------------------------------------
   function styleArea(feature) {
     const total = feature.properties.total || 0;
-    let fillColor = "#1e293b";
-    let fillOpacity = 0.08;
-    let strokeColor = "rgba(148, 163, 184, 0.4)";
+    let fillColor = "#334155";
+    let fillOpacity = 0.04;
+    let strokeColor = "rgba(148, 163, 184, 0.35)";
     let weight = 1;
 
     if (total > 0 && total <= 3) {
-      fillColor = "#0284c7";
-      fillOpacity = 0.22;
-      strokeColor = "#38bdf8";
+      fillColor = "#475569";
+      fillOpacity = 0.18;
+      strokeColor = "rgba(203, 213, 225, 0.6)";
       weight = 1.2;
     } else if (total > 3 && total <= 15) {
-      fillColor = "#d97706";
-      fillOpacity = 0.28;
-      strokeColor = "#f59e0b";
-      weight = 1.4;
+      fillColor = "#92400e";
+      fillOpacity = 0.25;
+      strokeColor = "#d97706";
+      weight = 1.3;
     } else if (total > 15) {
-      fillColor = "#e11d48";
-      fillOpacity = 0.35;
-      strokeColor = "#fb7185";
-      weight = 1.6;
+      fillColor = "#991b1b";
+      fillOpacity = 0.3;
+      strokeColor = "#dc2626";
+      weight = 1.5;
     }
 
     return {
@@ -190,17 +190,16 @@
       fillOpacity,
       color: strokeColor,
       weight,
-      opacity: 0.9,
+      opacity: 0.85,
     };
   }
 
   const highlightStyle = {
-    weight: 2.5,
-    color: "#38bdf8",
-    fillColor: "#0284c7",
-    fillOpacity: 0.4,
+    weight: 2,
+    color: "#ffffff",
+    fillColor: "rgba(255, 255, 255, 0.12)",
+    fillOpacity: 0.2,
   };
-
   function onEachArea(feature, layer) {
     const p = feature.properties;
     layer.on({
@@ -432,33 +431,153 @@
     map.on("click", onPick);
   }
 
+  function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} Б`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  }
+
   function openUploadForm(lat, lng) {
     openModal(`
-      <h2>Новый материал</h2>
-      <div class="hint" style="margin-bottom:12px;">Координаты: ${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
-      <label>Файл (фото или видео)</label>
-      <input id="up-file" type="file" accept="image/*,video/*" />
-      <label>Название</label><input id="up-title" maxlength="120" placeholder="Например: Озеро Байкал на закате" />
-      <label>Описание</label><textarea id="up-desc" rows="3" maxlength="2000" placeholder="Расскажите историю места..."></textarea>
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>Добавление на карту</div>
+        <div class="coord-chip">📍 ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.</div>
+      </div>
+      <h2 class="modal-title">Новый материал</h2>
+
+      <label>Медиафайл</label>
+      <div class="dropzone" id="up-dropzone">
+        <input id="up-file" type="file" accept="image/*,video/*" class="file-input-hidden" />
+        <div class="dropzone-idle" id="dz-idle">
+          <div class="dropzone-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <span class="dropzone-main">Перетащите фото или видео сюда</span>
+          <span class="dropzone-sub">или <span class="dropzone-link">выберите с устройства</span> · JPG, PNG, MP4, MOV до 512 МБ</span>
+        </div>
+        <div class="dropzone-selected hidden" id="dz-selected">
+          <div class="selected-preview-wrap" id="dz-preview"></div>
+          <div class="selected-info">
+            <div class="selected-name" id="dz-filename">—</div>
+            <div class="selected-size" id="dz-filesize">—</div>
+          </div>
+          <button type="button" class="selected-remove" id="dz-remove">Заменить</button>
+        </div>
+      </div>
+
+      <label for="up-title">Название</label>
+      <input id="up-title" maxlength="120" placeholder="Например: Озеро Байкал на закате" />
+
+      <label for="up-desc">Описание (необязательно)</label>
+      <textarea id="up-desc" rows="3" maxlength="2000" placeholder="Расскажите историю этого места или кадра…"></textarea>
+
       <div class="msg" id="up-msg"></div>
-      <button id="up-submit" class="primary" style="width:100%;">Отправить на модерацию</button>`);
+
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" data-close>Отмена</button>
+        <button type="button" id="up-submit" class="btn-primary-action">Отправить на модерацию</button>
+      </div>
+    `);
+
+    let selectedFile = null;
+    const dropzone = $("#up-dropzone");
+    const fileInput = $("#up-file");
+    const dzIdle = $("#dz-idle");
+    const dzSelected = $("#dz-selected");
+    const dzPreview = $("#dz-preview");
+    const dzFilename = $("#dz-filename");
+    const dzFilesize = $("#dz-filesize");
+    const dzRemove = $("#dz-remove");
+
+    const setFile = (file) => {
+      if (!file) {
+        selectedFile = null;
+        fileInput.value = "";
+        dzSelected.classList.add("hidden");
+        dzIdle.classList.remove("hidden");
+        dzPreview.innerHTML = "";
+        return;
+      }
+      selectedFile = file;
+      dzFilename.textContent = file.name;
+      dzFilesize.textContent = formatFileSize(file.size);
+      dzPreview.innerHTML = "";
+      if (file.type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = URL.createObjectURL(file);
+        dzPreview.appendChild(img);
+      } else if (file.type.startsWith("video/")) {
+        dzPreview.innerHTML = `<span style="font-size:22px;">🎬</span>`;
+      } else {
+        dzPreview.innerHTML = `<span style="font-size:22px;">📁</span>`;
+      }
+      dzIdle.classList.add("hidden");
+      dzSelected.classList.remove("hidden");
+      $("#up-msg").textContent = "";
+    };
+
+    dropzone.onclick = (e) => {
+      if (e.target === dzRemove || dzRemove.contains(e.target)) {
+        setFile(null);
+        fileInput.click();
+        return;
+      }
+      if (!selectedFile) fileInput.click();
+    };
+
+    fileInput.onchange = () => {
+      if (fileInput.files && fileInput.files[0]) setFile(fileInput.files[0]);
+    };
+
+    dropzone.ondragover = (e) => {
+      e.preventDefault();
+      dropzone.classList.add("dragover");
+    };
+    dropzone.ondragleave = () => {
+      dropzone.classList.remove("dragover");
+    };
+    dropzone.ondrop = (e) => {
+      e.preventDefault();
+      dropzone.classList.remove("dragover");
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+        setFile(e.dataTransfer.files[0]);
+      }
+    };
+
     $("#up-submit").onclick = async () => {
-      const file = $("#up-file").files[0];
       const title = $("#up-title").value.trim();
-      if (!file) return ($("#up-msg").textContent = "Выберите файл");
-      if (!title) return ($("#up-msg").textContent = "Введите название");
+      if (!selectedFile) return ($("#up-msg").textContent = "Выберите или перетащите фото или видео");
+      if (!title) return ($("#up-msg").textContent = "Введите название материала");
+
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", selectedFile);
       fd.append("title", title);
       fd.append("description", $("#up-desc").value.trim());
-      fd.append("lat", lat); fd.append("lng", lng);
+      fd.append("lat", lat);
+      fd.append("lng", lng);
+
       $("#up-submit").disabled = true;
-      $("#up-msg").textContent = "Загрузка…";
+      $("#up-msg").textContent = "Загрузка файла…";
+
       try {
         await api("/api/media", { method: "POST", body: fd });
-        openModal(`<h2>Успешно отправлено ✅</h2><p>Материал отправлен на премодерацию.
-          Как только администратор подтвердит его, он появится в этой зоне и на карте.</p>
-          <button data-close class="primary">Понятно</button>`);
+        openModal(`
+          <div class="modal-top">
+            <div class="modal-badge"><span class="badge-dot"></span>Статус заявки</div>
+          </div>
+          <h2 class="modal-title">Материал отправлен</h2>
+          <p style="color: var(--muted); font-size: 14px; line-height: 1.6; margin: 12px 0 24px;">
+            Ваш снимок или видео успешно загружены и ожидают проверки администратором.
+            После одобрения они будут отображаться на карте и в галерее этого региона.
+          </p>
+          <div class="modal-actions" style="justify-content: flex-end;">
+            <button data-close class="btn-primary-action">Понятно</button>
+          </div>
+        `);
       } catch (e) {
         $("#up-submit").disabled = false;
         $("#up-msg").textContent = e.message;
