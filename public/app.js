@@ -123,9 +123,10 @@
   const acBtn = $("#ac-gallery-btn");
 
   let cardHideTimeout = null;
-  const showAreaCard = (props) => {
+  const showAreaCard = (props, feature) => {
     clearTimeout(cardHideTimeout);
     state.activeArea = props;
+    state.activeFeature = feature;
     const title = getAreaTitle(props);
     const typeLabel = props.level === 2 ? "Район / Город" : "Регион РФ";
     acType.textContent = typeLabel;
@@ -149,7 +150,7 @@
 
   acBtn.onclick = () => {
     if (state.activeArea) {
-      openAreaGallery(state.activeArea.level, state.activeArea.id, getAreaTitle(state.activeArea));
+      openAreaGallery(state.activeArea.level, state.activeArea.id, getAreaTitle(state.activeArea), state.activeFeature);
     }
   };
 
@@ -250,17 +251,23 @@
 
     layer.on({
       mouseover: (e) => {
+        if (state.pick) return;
         layer.setStyle(highlightStyle);
         layer.bringToFront();
-        showAreaCard(p);
+        showAreaCard(p, feature);
       },
       mouseout: (e) => {
+        if (state.pick) return;
         areasLayer.resetStyle(layer);
         hideAreaCard();
       },
       click: (e) => {
+        if (state.pick) {
+          state.pick(e);
+          return;
+        }
         L.DomEvent.stopPropagation(e);
-        openAreaGallery(p.level, p.id, title);
+        openAreaGallery(p.level, p.id, title, feature);
       },
     });
   }
@@ -327,7 +334,22 @@
   });
 
   // ---- AREA GALLERY MODAL ---------------------------------------------------
-  async function openAreaGallery(level, id, title) {
+  function getGeomCenter(geom) {
+    if (!geom) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    const scan = (c) => {
+      if (typeof c[0] === "number") {
+        if (c[0] < minX) minX = c[0]; if (c[0] > maxX) maxX = c[0];
+        if (c[1] < minY) minY = c[1]; if (c[1] > maxY) maxY = c[1];
+      } else for (const sub of c) scan(sub);
+    };
+    scan(geom.coordinates);
+    if (!Number.isFinite(minX)) return null;
+    return { lat: (minY + maxY) / 2, lng: (minX + maxX) / 2 };
+  }
+
+  // ---- AREA GALLERY MODAL ---------------------------------------------------
+  async function openAreaGallery(level, id, title, feature) {
     const levelName = level === 2 ? "Район / Город" : "Субъект РФ";
     openModal(`
       <div class="modal-top">
@@ -336,6 +358,16 @@
       <h2 class="modal-title">${esc(title)}</h2>
       <div class="modal-loader"><div class="spinner"></div><span>Загрузка материалов…</span></div>
     `);
+
+    const handleAreaUpload = () => {
+      const center = (feature && getGeomCenter(feature.geometry)) || map.getCenter();
+      if (!state.user) {
+        openAuth(() => openUploadForm(center.lat, center.lng, title));
+        return;
+      }
+      openUploadForm(center.lat, center.lng, title);
+    };
+
     try {
       const data = await api(`/api/areas/${level}/${id}/media`);
       const items = data.media || [];
@@ -347,7 +379,6 @@
           <h2 class="modal-title">${esc(title)}</h2>
           <div class="empty-state">
             <div class="empty-icon-wrap">
-              <div class="empty-icon-glow"></div>
               <div class="empty-icon">
                 <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
@@ -356,14 +387,14 @@
               </div>
             </div>
             <h3 class="empty-title">Пока здесь нет снимков и видео</h3>
-            <p class="empty-desc">Будьте первым, кто покажет красоту этого края! Загрузите яркие фотографии или видеоролики — после быстрой модерации они появятся на интерактивной карте страны.</p>
+            <p class="empty-desc">Будьте первым, кто покажет красоту этого края! Загрузите фотографии или видеоролики — после быстрой модерации они появятся на интерактивной карте страны.</p>
             <button id="ag-upload" class="empty-cta">
               <span class="cta-plus">+</span>
               <span>Добавить первый материал сюда</span>
             </button>
           </div>
         `);
-        $("#ag-upload").onclick = () => { closeModal(); startUpload(); };
+        $("#ag-upload").onclick = handleAreaUpload;
         return;
       }
 
@@ -384,7 +415,7 @@
         </div>
         <div class="grid">${items.map(cardHtml).join("")}</div>
       `);
-      $("#ag-add").onclick = () => { closeModal(); startUpload(); };
+      $("#ag-add").onclick = handleAreaUpload;
       modalBody.querySelectorAll("[data-media]").forEach((el) =>
         (el.onclick = () => openMedia(el.getAttribute("data-media"))));
     } catch (e) {
@@ -424,9 +455,12 @@
   }
 
   // ---- AUTH DIALOG ----------------------------------------------------------
-  function openAuth() {
+  function openAuth(onSuccess) {
     openModal(`
-      <h2>Вход в KYR</h2>
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>Авторизация</div>
+      </div>
+      <h2 class="modal-title">Вход в KYR</h2>
       <div class="tabs">
         <button id="tab-login" class="active">Вход</button>
         <button id="tab-register">Регистрация</button>
@@ -434,7 +468,11 @@
       <label>Логин</label><input id="au-user" autocomplete="username" />
       <label>Пароль</label><input id="au-pass" type="password" autocomplete="current-password" />
       <div class="msg" id="au-msg"></div>
-      <button id="au-submit" class="primary" style="width:100%;">Войти</button>`);
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" data-close>Отмена</button>
+        <button type="button" id="au-submit" class="btn-primary-action">Войти</button>
+      </div>
+    `);
     let mode = "login";
     const setMode = (m) => {
       mode = m;
@@ -447,17 +485,32 @@
     $("#au-submit").onclick = async () => {
       const username = $("#au-user").value.trim();
       const password = $("#au-pass").value;
+      if (!username || !password) {
+        $("#au-msg").textContent = "Заполните логин и пароль";
+        return;
+      }
+      $("#au-submit").disabled = true;
       try {
         const res = await api(`/api/${mode}`, { method: "POST", json: { username, password } });
         setAuth(res.token, res.user);
-        closeModal();
-      } catch (e) { $("#au-msg").textContent = e.message; }
+        if (typeof onSuccess === "function") {
+          onSuccess();
+        } else {
+          closeModal();
+        }
+      } catch (e) {
+        $("#au-submit").disabled = false;
+        $("#au-msg").textContent = e.message;
+      }
     };
   }
 
   // ---- UPLOAD FLOW ----------------------------------------------------------
   function startUpload() {
-    if (!state.user) return openAuth();
+    if (!state.user) {
+      openAuth(startUpload);
+      return;
+    }
     hideAreaCard();
     const bar = document.createElement("div");
     bar.className = "pickbar";
@@ -483,13 +536,21 @@
     return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
   }
 
-  function openUploadForm(lat, lng) {
+  function openUploadForm(lat, lng, areaName) {
+    const displayTitle = areaName ? `Новый материал · ${esc(areaName)}` : "Новый материал";
+    const coordLabel = areaName
+      ? `📍 ${esc(areaName)} · ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.`
+      : `📍 ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.`;
+    const titlePlaceholder = areaName
+      ? `Например: ${esc(areaName)} весной`
+      : "Например: Озеро Байкал на закате";
+
     openModal(`
       <div class="modal-top">
         <div class="modal-badge"><span class="badge-dot"></span>Добавление на карту</div>
-        <div class="coord-chip">📍 ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.</div>
+        <div class="coord-chip">${coordLabel}</div>
       </div>
-      <h2 class="modal-title">Новый материал</h2>
+      <h2 class="modal-title">${displayTitle}</h2>
 
       <label>Медиафайл</label>
       <div class="dropzone" id="up-dropzone">
@@ -516,7 +577,7 @@
       </div>
 
       <label for="up-title">Название</label>
-      <input id="up-title" maxlength="120" placeholder="Например: Озеро Байкал на закате" />
+      <input id="up-title" maxlength="120" placeholder="${titlePlaceholder}" />
 
       <label for="up-desc">Описание (необязательно)</label>
       <textarea id="up-desc" rows="3" maxlength="2000" placeholder="Расскажите историю этого места или кадра…"></textarea>
