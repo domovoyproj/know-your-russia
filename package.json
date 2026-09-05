@@ -1,0 +1,13 @@
+{
+  "name": "kyr",
+  "version": "0.1.0",
+  "description": "Know Your Russia — interactive map of user photos/videos with local storage and moderation",
+  "type": "module",
+  "scripts": {
+    "start": "bun run server.js",
+    "dev": "bun --watch run server.js"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  }
+}

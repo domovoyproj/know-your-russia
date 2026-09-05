@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KYR — Знай свою Россию</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">🇷🇺 KYR <span>Know Your Russia</span></div>
+    <div class="spacer"></div>
+    <div id="hint" class="hint"></div>
+    <nav id="nav"><!-- filled by app.js --></nav>
+  </header>
+
+  <div id="map"></div>
+
+  <!-- Modal shell reused for every dialog -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <button class="close" data-close>&times;</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
