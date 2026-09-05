@@ -337,12 +337,14 @@
       map.fitBounds(foundLayer.getBounds(), { padding: [50, 50], maxZoom: 7, duration: 1.1 });
       foundLayer.setStyle(highlightStyle);
       foundLayer.bringToFront();
-      showAreaCard(foundLayer.feature.properties, foundLayer.feature);
       if (searchSuggs) searchSuggs.classList.add("hidden");
-      toast(`Субъект: ${getAreaTitle(foundLayer.feature.properties)}`);
+      const p = foundLayer.feature && foundLayer.feature.properties;
+      toast(`Субъект: ${getAreaTitle(p)}`);
+      setTimeout(() => {
+        openAreaGallery(p.level, p.id, getAreaTitle(p), foundLayer.feature);
+      }, 600);
       return true;
     }
-    return false;
   }
 
   function renderSuggestions(query) {
@@ -608,12 +610,21 @@
   function onEachArea(feature, layer) {
     const p = feature.properties;
     const title = getAreaTitle(p);
+    const total = p.total || 0;
+    const levelLabel = p.level === 2 ? "Район / Округ" : "Субъект РФ";
+    const totalLabel = `${total} ${declension(total, ["материал", "материала", "материалов"])}`;
 
-    layer.bindTooltip(title, {
+    layer.bindTooltip(`
+      <div class="area-tooltip-box">
+        <div class="area-tooltip-title">${esc(title)}</div>
+        <div class="area-tooltip-meta">${levelLabel} · ${totalLabel}</div>
+        <div class="area-tooltip-hint">Нажмите, чтобы открыть галерею</div>
+      </div>
+    `, {
       sticky: true,
       direction: "top",
-      offset: [0, -8],
-      className: "area-tooltip",
+      offset: [0, -10],
+      className: "area-tooltip-custom",
     });
 
     layer.on({
@@ -621,12 +632,10 @@
         if (state.pick) return;
         layer.setStyle(highlightStyle);
         layer.bringToFront();
-        showAreaCard(p, feature);
       },
       mouseout: (e) => {
         if (state.pick) return;
         areasLayer.resetStyle(layer);
-        hideAreaCard();
       },
       click: (e) => {
         if (state.pick) {
@@ -816,10 +825,10 @@
       const admin = state.user.is_admin
         ? `<button id="nav-admin">Модерация</button>` : "";
       nav.innerHTML = `
-        <button id="nav-upload" class="primary">+ Загрузить</button>
+        <button id="nav-upload" class="btn-nav-upload">+ Загрузить</button>
         ${admin}
         <button id="nav-me" class="user-chip">
-          ${avatarHtml(state.user, 26)}
+          ${avatarHtml(state.user, 24)}
           <span class="who">${esc(state.user.username)}</span>
         </button>
         <button id="nav-logout">Выход</button>`;
@@ -828,7 +837,7 @@
       $("#nav-logout").onclick = () => setAuth(null, null);
       if (state.user.is_admin) $("#nav-admin").onclick = openAdmin;
     } else {
-      nav.innerHTML = `<button id="nav-login" class="primary">Войти / Регистрация</button>`;
+      nav.innerHTML = `<button id="nav-login" class="btn-nav-upload">Войти / Регистрация</button>`;
       $("#nav-login").onclick = openAuth;
     }
   }
