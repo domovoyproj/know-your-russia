@@ -6,6 +6,13 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+  // Inline SVG icons — crafted, monochrome, inherit currentColor (no emoji).
+  const ICON = {
+    camera: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.6A1.6 1.6 0 0 1 4.6 7h2L7.8 5.2A1 1 0 0 1 8.6 4.8h6.8a1 1 0 0 1 .8.4L17.4 7h2A1.6 1.6 0 0 1 21 8.6v9A1.6 1.6 0 0 1 19.4 19H4.6A1.6 1.6 0 0 1 3 17.6z"/><circle cx="12" cy="12.6" r="3.1"/></svg>',
+    video: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2.2"/><path d="M15 10.4 21 7v10l-6-3.4z"/></svg>',
+    pin: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6.4-5.5 6.4-10.1A6.4 6.4 0 0 0 5.6 10.9C5.6 15.5 12 21 12 21z"/><circle cx="12" cy="10.6" r="2.3"/></svg>',
+  };
+
   // Russian names for 83 ADM1 regions
   const RU_REGIONS = {
     "RU-ALT": "Алтайский край", "RU-MO": "Республика Мордовия", "RU-TUL": "Тульская область",
@@ -405,8 +412,8 @@
         <div class="modal-top">
           <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
           <div class="modal-meta-chips">
-            <span class="meta-chip">📷 ${photos} ${declension(photos, ["фото", "фото", "фото"])}</span>
-            <span class="meta-chip">🎥 ${videos} ${declension(videos, ["видео", "видео", "видео"])}</span>
+            <span class="meta-chip">${ICON.camera} ${photos} ${declension(photos, ["фото", "фото", "фото"])}</span>
+            <span class="meta-chip">${ICON.video} ${videos} ${declension(videos, ["видео", "видео", "видео"])}</span>
           </div>
         </div>
         <div class="modal-header-row">
@@ -516,7 +523,7 @@
     hideAreaCard();
     const bar = document.createElement("div");
     bar.className = "pickbar";
-    bar.innerHTML = `📍 Кликните точное место на карте &nbsp; <button id="pick-cancel" class="danger">Отмена</button>`;
+    bar.innerHTML = `${ICON.pin} Кликните точное место на карте &nbsp; <button id="pick-cancel" class="danger">Отмена</button>`;
     document.body.appendChild(bar);
     document.body.classList.add("picking");
     $("#pick-cancel").onclick = cancelPick;
@@ -541,8 +548,8 @@
   function openUploadForm(lat, lng, areaName) {
     const displayTitle = areaName ? `Новый материал · ${esc(areaName)}` : "Новый материал";
     const coordLabel = areaName
-      ? `📍 ${esc(areaName)} · ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.`
-      : `📍 ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.`;
+      ? `${ICON.pin} ${esc(areaName)} · ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.`
+      : `${ICON.pin} ${lat.toFixed(5)}° с. ш., ${lng.toFixed(5)}° в. д.`;
     const titlePlaceholder = areaName
       ? `Например: ${esc(areaName)} весной`
       : "Например: Озеро Байкал на закате";
@@ -735,7 +742,7 @@
       ${media}
       <p id="md-desc" style="margin: 12px 0 6px; font-size: 14px; line-height: 1.5;">${
         esc(m.description) || "<span class='hint'>Без описания</span>"}</p>
-      <div class="hint" style="margin-top:10px;">📍 ${region ? esc(region) + " · " : ""}${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}
+      <div class="hint" style="margin-top:10px;">${ICON.pin} ${region ? esc(region) + " · " : ""}${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}
         · ${fmtDate(m.created_at)} · Автор:
         <a href="#" id="md-author" class="link">${esc(m.username)}</a></div>
       ${m.status === "rejected" && m.review_note
@@ -862,7 +869,7 @@
         ? `<div class="grid">${list.map(cardHtml).join("")}</div>`
         : `<div class="empty-state">
              <div class="empty-icon-wrap"><div class="empty-icon-glow"></div>
-               <div class="empty-icon">📷</div></div>
+               <div class="empty-icon">${ICON.camera}</div></div>
              <h3 class="empty-title">${self ? "Здесь пока пусто" : "Нет опубликованных материалов"}</h3>
              <p class="empty-desc">${self
                ? (tab === "all" ? "Загрузите первое фото или видео - после модерации оно появится на карте."
@@ -1033,7 +1040,7 @@
       : `<img src="${m.url}" style="max-width:100%;border-radius:12px" />`;
     openModal(`<h2>${esc(m.title)}</h2>${media}
       <p style="margin: 10px 0;">${esc(m.description)}</p>
-      <div class="hint">Автор: ${esc(m.username)} · 📍 ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>
+      <div class="hint">Автор: ${esc(m.username)} · ${ICON.pin} ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>
       <div class="row" style="margin-top:16px">
         <button id="rv-ok" class="ok" style="flex:1;padding:10px;">Одобрить</button>
         <button id="rv-no" class="danger" style="flex:1;padding:10px;">Отклонить</button>
