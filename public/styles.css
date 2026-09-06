@@ -11,9 +11,9 @@
   --ink-850: #0d1015;
   --ink-800: #11141b;
   --ink-750: #151923;
-  --ink-700: #1a1f2a;
-  --ink-650: #202632;
-  --ink-600: #272e3c;
+  --ink-700: #1e222c;
+  --ink-650: #262b37;
+  --ink-600: #2f3543;
 
   /* Hairlines */
   --line: rgba(226, 232, 240, 0.09);
@@ -27,11 +27,11 @@
   --fg-4: #58606d;
   --bone: #e7e2d6;
 
-  /* Accent — desaturated carmine, used sparingly */
-  --accent: #b0392f;
-  --accent-hi: #c9463a;
-  --accent-line: rgba(176, 57, 47, 0.5);
-  --accent-soft: rgba(176, 57, 47, 0.13);
+  /* Accent — softened brick; warm enough to read as inviting, not alarming */
+  --accent: #a8544a;
+  --accent-hi: #bd6156;
+  --accent-line: rgba(189, 97, 86, 0.55);
+  --accent-soft: rgba(189, 97, 86, 0.16);
 
   /* Status, muted */
   --ok: #7fb08a;
@@ -119,12 +119,12 @@ body {
 .brand-text { display: flex; flex-direction: column; gap: 1px; }
 .brand-title {
   font-family: var(--serif);
-  font-size: 14.5px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 0.07em;
+  letter-spacing: 0.16em;
   color: var(--bone);
   text-transform: uppercase;
-  line-height: 1.1;
+  line-height: 1.05;
   white-space: nowrap;
 }
 .brand-sub {
@@ -327,17 +327,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   outline-offset: 1px;
 }
 
-/* Accent action — outlined, never a filled slab in chrome */
+/* Accent action — solid but muted, so the label stays crisp white */
 .btn-nav-upload {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  color: #eab5ae;
+  background: var(--accent);
+  border: 1px solid var(--accent-hi);
+  color: #fff;
   font-weight: 600;
   white-space: nowrap;
 }
 .btn-nav-upload:hover {
-  background: rgba(176, 57, 47, 0.22);
-  border-color: var(--accent-hi);
+  background: var(--accent-hi);
+  border-color: #cb7065;
   color: #fff;
 }
 
@@ -577,22 +577,26 @@ button.ok:hover { background: rgba(127, 176, 138, 0.2); color: #a7ceae; }
 /* Coordinate pick mode */
 .picking { cursor: crosshair !important; }
 .pickbar {
-  position: absolute;
+  /* Appended to <body>, so it must be fixed and clear the 50px topbar;
+     an absolute top:14px slid underneath it and read as an empty plate. */
+  position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  top: 14px;
-  z-index: 900;
+  top: 62px;
+  z-index: 1500;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 14px;
-  background: var(--ink-800);
+  padding: 9px 10px 9px 14px;
+  background: var(--ink-750);
   border: 1px solid var(--accent-line);
   border-radius: var(--r2);
   box-shadow: var(--shadow);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--fg);
+  white-space: nowrap;
 }
+.pickbar .ic { color: var(--accent-hi); }
 
 /* Coordinate marker */
 .coord-target-pin-wrap { background: transparent !important; border: none !important; }
@@ -632,7 +636,7 @@ button.ok:hover { background: rgba(127, 176, 138, 0.2); color: #a7ceae; }
 }
 .coord-popup-btns { display: flex; gap: 6px; }
 .coord-popup-btns button { font-size: 11px; padding: 5px 10px; }
-.coord-btn-upload { background: var(--accent-soft); border-color: var(--accent-line); color: #eab5ae; }
+.coord-btn-upload { background: var(--accent); border-color: var(--accent-hi); color: #fff; }
 .coord-btn-copy { background: var(--ink-700); }
 .coord-chip {
   display: inline-flex;
@@ -1083,13 +1087,13 @@ textarea { resize: vertical; line-height: 1.55; }
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-line);
-  color: #eab5ae;
+  background: var(--accent);
+  border: 1px solid var(--accent-hi);
+  color: #fff;
   font-weight: 600;
   padding: 7px 15px;
 }
-.empty-cta:hover { background: rgba(176, 57, 47, 0.22); color: #fff; border-color: var(--accent-hi); }
+.empty-cta:hover { background: var(--accent-hi); border-color: #cb7065; color: #fff; }
 .cta-plus { font-size: 14px; line-height: 1; }
 
 /* ==========================================================================

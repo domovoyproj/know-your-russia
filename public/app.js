@@ -674,23 +674,42 @@
   };
   map.on("moveend zoomend", scheduleReload);
 
+  // Overlapping pans resolve out of order; only the newest response may paint,
+  // otherwise a slow earlier request repaints the map with its stale bbox.
+  let reloadToken = 0;
+
+  // Subject outlines are static, so they are fetched once for the whole
+  // country: a bbox-bound fetch left the previous viewport's regions on screen
+  // after zooming out.
+  let countryContours = null;
+  const loadCountryContours = async () => {
+    if (!countryContours) {
+      countryContours = await api("/api/areas?level=1&bbox=-180,-85,180,85");
+    }
+    return countryContours;
+  };
+
   async function reloadView() {
     if (state.pick) return;
+    const token = ++reloadToken;
     const b = map.getBounds();
     const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
 
     if (state.mode === "points") {
       areasLayer.clearLayers();
-      // Subject outlines stay on screen so pins are read against real geography.
+      $("#map-legend").classList.add("hidden");
       try {
-        const contours = await api(`/api/areas?level=1&bbox=${bbox}`);
-        contourLayer.clearLayers();
-        if (contours && contours.features) contourLayer.addData(contours);
+        const contours = await loadCountryContours();
+        if (token !== reloadToken) return;
+        if (!contourLayer.getLayers().length && contours && contours.features) {
+          contourLayer.addData(contours);
+        }
         if (!map.hasLayer(contourLayer)) map.addLayer(contourLayer);
       } catch (e) { /* context layer is optional */ }
 
       let points = [];
       try { points = await api(`/api/points?bbox=${bbox}`); } catch (e) { return; }
+      if (token !== reloadToken) return;
       cluster.clearLayers();
       const markers = points.map((p) => {
         const m = L.marker([p.lat, p.lng], { icon: pointIcon, title: p.title || "" });
@@ -700,7 +719,6 @@
       cluster.addLayers(markers);
       $("#hint").textContent =
         `В кадре: ${points.length} ${declension(points.length, ["точка", "точки", "точек"])}`;
-      $("#map-legend").classList.add("hidden");
       return;
     }
 
@@ -717,11 +735,11 @@
       console.warn("areas load error:", e);
       return;
     }
+    if (token !== reloadToken) return;
 
     areasLayer.clearLayers();
     if (data && data.features) {
       areasLayer.addData(data);
-      areasLayer.setStyle(styleArea);
       areasLayer.eachLayer((layer) => onEachArea(layer.feature, layer));
       const count = data.features.length;
       const label = level === "1"
@@ -874,7 +892,7 @@
       <div class="modal-top">
         <div class="modal-badge"><span class="badge-dot"></span>Авторизация</div>
       </div>
-      <h2 class="modal-title">Вход в атлас</h2>
+      <h2 class="modal-title">Вход в KYR</h2>
       <div class="tabs">
         <button id="tab-login" class="active">Вход</button>
         <button id="tab-register">Регистрация</button>
