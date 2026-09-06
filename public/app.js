@@ -174,7 +174,10 @@
   });
   map.addLayer(cluster);
 
-  let areasLayer = L.geoJSON(null).addTo(map);
+  // The style function must be bound to the layer itself: resetStyle() on
+  // mouseout replays layer.options.style, and without it Leaflet restores its
+  // own #3388ff defaults and leaves hovered regions painted blue.
+  let areasLayer = L.geoJSON(null, { style: (f) => styleArea(f) }).addTo(map);
 
   // ---- COORDINATES NAVIGATION & JUMP ----------------------------------------
   let coordMarker = null;
