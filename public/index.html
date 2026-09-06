@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>АТЛАС РОССИИ — Умная фотогалерея регионов</title>
+  <title>Атлас России — фотогалерея регионов</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=PT+Serif:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=PT+Serif:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -17,36 +17,34 @@
   <header id="topbar">
     <div class="brand">
       <div class="brand-crest" aria-hidden="true">
-        <svg class="crest-svg" viewBox="0 0 32 32" fill="none">
-          <circle cx="16" cy="16" r="14" stroke="rgba(217, 164, 65, 0.45)" stroke-width="1.2"/>
-          <circle cx="16" cy="16" r="10.5" stroke="rgba(255, 255, 255, 0.12)" stroke-width="1"/>
-          <polygon points="16,3 18.5,13.5 16,16 13.5,13.5" fill="#e01e2b"/>
-          <polygon points="16,29 18.5,18.5 16,16 13.5,18.5" fill="#a8131d"/>
-          <polygon points="3,16 13.5,13.5 16,16 13.5,18.5" fill="#d9a441"/>
-          <polygon points="29,16 18.5,13.5 16,16 18.5,18.5" fill="#b38229"/>
-          <circle cx="16" cy="16" r="2.2" fill="#ffffff"/>
+        <!-- Engraved graticule mark: neutral linework, single accent point -->
+        <svg class="crest-svg" viewBox="0 0 26 26" fill="none" stroke="#e7e2d6">
+          <circle cx="13" cy="13" r="10.25" stroke-opacity="0.55" stroke-width="1"/>
+          <ellipse cx="13" cy="13" rx="4.4" ry="10.25" stroke-opacity="0.28" stroke-width="0.85"/>
+          <path d="M3.4 9.4h19.2M3.4 16.6h19.2M2.75 13h20.5" stroke-opacity="0.28" stroke-width="0.85"/>
+          <circle cx="16.1" cy="9.4" r="1.5" fill="#b0392f" stroke="none"/>
         </svg>
       </div>
       <div class="brand-text">
-        <span class="brand-title">АТЛАС РОССИИ</span>
-        <span class="brand-sub">Умная фотогалерея 89 субъектов</span>
+        <span class="brand-title">Атлас России</span>
+        <span class="brand-sub">Фотогалерея регионов</span>
       </div>
     </div>
 
-    <!-- Mode / Level switcher -->
+    <!-- Level switcher -->
     <div class="view-switch" role="tablist">
       <button id="lvl-adm1" class="switch-btn active" data-lvl="1" title="Субъекты Российской Федерации">
-        <span class="dot"></span> Регионы РФ
+        <span class="dot"></span> Субъекты
       </button>
-      <button id="lvl-adm2" class="switch-btn" data-lvl="2" title="Муниципальные районы и округа">
+      <button id="lvl-adm2" class="switch-btn" data-lvl="2" title="Муниципальные районы и городские округа">
         <span class="dot"></span> Районы
       </button>
-      <button id="lvl-points" class="switch-btn" data-lvl="points" title="Индивидуальные фото- и видеоточки">
+      <button id="lvl-points" class="switch-btn" data-lvl="points" title="Отдельные точки съёмки">
         <span class="dot"></span> Точки съёмки
       </button>
     </div>
 
-    <!-- Smart Omni-Search Bar: Regions, Cities, Coordinates -->
+    <!-- Omni-search: regions, cities, coordinates -->
     <div class="omni-search" id="omni-search">
       <form id="search-form" class="search-form" autocomplete="off">
         <span class="search-icon" aria-hidden="true">
@@ -55,13 +53,12 @@
             <line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
         </span>
-        <input type="text" id="search-input" placeholder="Поиск региона, города или координат..." spellcheck="false" autocomplete="off" />
+        <input type="text" id="search-input" placeholder="Регион, город или координаты" spellcheck="false" autocomplete="off" />
         <button type="button" id="search-clear" class="search-clear hidden" title="Очистить">&times;</button>
         <button type="submit" id="search-submit" class="search-submit" title="Найти">Найти</button>
       </form>
       <div id="search-suggestions" class="search-suggestions hidden"></div>
     </div>
-
 
     <div id="hint" class="hint-pill"></div>
     <nav id="nav"><!-- filled by app.js --></nav>
@@ -70,19 +67,23 @@
   <div id="map-wrap">
     <div id="map"></div>
 
-
-    <!-- Mode Helper / Legend -->
-    <div class="map-legend">
-      <span class="legend-chip"><span class="legend-color c-low"></span> Мало</span>
-      <span class="legend-chip"><span class="legend-color c-med"></span> Средне</span>
-      <span class="legend-chip"><span class="legend-color c-high"></span> Много</span>
+    <!-- Choropleth legend; ranges match styleArea() classes in app.js -->
+    <div class="map-legend" id="map-legend">
+      <div class="legend-title">Материалов в регионе</div>
+      <div class="legend-scale">
+        <div class="legend-step"><span class="legend-color c-0"></span><span class="legend-label">0</span></div>
+        <div class="legend-step"><span class="legend-color c-1"></span><span class="legend-label">1–2</span></div>
+        <div class="legend-step"><span class="legend-color c-2"></span><span class="legend-label">3–9</span></div>
+        <div class="legend-step"><span class="legend-color c-3"></span><span class="legend-label">10–29</span></div>
+        <div class="legend-step"><span class="legend-color c-4"></span><span class="legend-label">30+</span></div>
+      </div>
     </div>
   </div>
 
   <!-- Modal shell reused for every dialog -->
   <div id="modal" class="modal hidden">
     <div class="modal-card">
-      <button class="close" data-close>&times;</button>
+      <button class="close" data-close title="Закрыть">&times;</button>
       <div id="modal-body"></div>
     </div>
   </div>

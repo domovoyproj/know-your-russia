@@ -11,6 +11,7 @@
     camera: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.6A1.6 1.6 0 0 1 4.6 7h2L7.8 5.2A1 1 0 0 1 8.6 4.8h6.8a1 1 0 0 1 .8.4L17.4 7h2A1.6 1.6 0 0 1 21 8.6v9A1.6 1.6 0 0 1 19.4 19H4.6A1.6 1.6 0 0 1 3 17.6z"/><circle cx="12" cy="12.6" r="3.1"/></svg>',
     video: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2.2"/><path d="M15 10.4 21 7v10l-6-3.4z"/></svg>',
     pin: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6.4-5.5 6.4-10.1A6.4 6.4 0 0 0 5.6 10.9C5.6 15.5 12 21 12 21z"/><circle cx="12" cy="10.6" r="2.3"/></svg>',
+    file: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
   };
 
   // Russian names for 83 ADM1 regions
@@ -90,29 +91,81 @@
     renderNav();
   };
 
-  // ---- MAP INITIALIZATION (NO UKRAINE FLAG!) --------------------------------
+  // ---- MAP INITIALIZATION ---------------------------------------------------
+  // The overview is a self-contained vector atlas: ink void, graticule and the
+  // choropleth itself. No external basemap is drawn until the user zooms in far
+  // enough to need street-level context for placing a point.
   const map = L.map("map", {
     minZoom: 2,
+    maxZoom: 18,
     worldCopyJump: true,
     attributionControl: false,
     zoomControl: false,
   }).setView([62, 94], 3);
   window.kyrMap = map;
 
-  // Bespoke zoom control in bottom-right corner
   L.control.zoom({ position: "bottomright" }).addTo(map);
+  L.control.attribution({ prefix: false, position: "bottomright" }).addTo(map);
 
-  // Clean custom attribution control without any flags
-  L.control.attribution({
-    prefix: '<a href="https://leafletjs.com" target="_blank">Leaflet</a>',
-    position: "bottomright",
-  }).addTo(map);
+  // Graticule: 20° meridians, 10° parallels. Hairlines only, never interactive.
+  map.createPane("graticule");
+  map.getPane("graticule").style.zIndex = 350;
+  map.getPane("graticule").style.pointerEvents = "none";
+  const graticule = L.layerGroup().addTo(map);
+  const gridLine = (latlngs) =>
+    L.polyline(latlngs, {
+      pane: "graticule",
+      color: "#e7e2d6",
+      opacity: 0.1,
+      weight: 0.6,
+      interactive: false,
+    });
+  for (let lng = -180; lng <= 180; lng += 20) graticule.addLayer(gridLine([[-84, lng], [84, lng]]));
+  for (let lat = -80; lat <= 80; lat += 10) graticule.addLayer(gridLine([[lat, -180], [lat, 180]]));
 
-  // Standard OpenStreetMap with clean cartography (no watermark, no API key)
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
-  }).addTo(map);
+  // Street-level context, only from DETAIL_ZOOM upward. Inside Russia OSM
+  // renders local (Cyrillic) toponyms, so no foreign-label clutter appears.
+  const DETAIL_ZOOM = 7;
+  const detailTiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    minZoom: DETAIL_ZOOM,
+    className: "detail-tiles",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+  });
+  const syncBasemap = () => {
+    const detailed = map.getZoom() >= DETAIL_ZOOM;
+    if (detailed && !map.hasLayer(detailTiles)) map.addLayer(detailTiles);
+    if (!detailed && map.hasLayer(detailTiles)) map.removeLayer(detailTiles);
+    if (detailed && map.hasLayer(graticule)) map.removeLayer(graticule);
+    if (!detailed && !map.hasLayer(graticule)) map.addLayer(graticule);
+  };
+  map.on("zoomend", syncBasemap);
+  syncBasemap();
+
+  // Non-interactive subject outlines used as context in "points" mode.
+  map.createPane("contours");
+  map.getPane("contours").style.zIndex = 360;
+  map.getPane("contours").style.pointerEvents = "none";
+  const contourLayer = L.geoJSON(null, {
+    pane: "contours",
+    interactive: false,
+    style: {
+      fillColor: "#1b202b",
+      fillOpacity: 0.34,
+      color: "rgba(231, 226, 214, 0.18)",
+      weight: 0.7,
+      dashArray: null,
+    },
+  });
+
+  // Shooting-point marker: carmine dot in a bone ring, matching the palette.
+  const pointIcon = L.divIcon({
+    className: "point-pin",
+    html: "<span></span>",
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
   const cluster = L.markerClusterGroup({
     chunkedLoading: true,
     maxClusterRadius: 50,
@@ -530,82 +583,41 @@
     return forms[2];
   }
 
-  // ---- NOBLE CARTOGRAPHIC POLYGON STYLES ------------------------------------
+  // ---- CHOROPLETH ----------------------------------------------------------
+  // Single-hue sequential ramp; classes and hex values mirror --ramp-* in
+  // styles.css and the legend in index.html. Keep all three in sync.
+  const RAMP = ["#1b202b", "#5c2a2b", "#85302c", "#ac3a30", "#d24b3b"];
+
+  const rampClass = (total) =>
+    total === 0 ? 0 : total <= 2 ? 1 : total <= 9 ? 2 : total <= 29 ? 3 : 4;
+
   function styleArea(feature) {
     const p = feature.properties;
-    const total = p.total || 0;
+    const cls = rampClass(p.total || 0);
     const isDistrict = p.level === 2;
-
-    if (isDistrict) {
-      let strokeColor = "rgba(100, 116, 139, 0.45)";
-      let weight = 1.2;
-      let fillColor = "#111827";
-      let fillOpacity = 0.12;
-
-      if (total > 0 && total <= 3) {
-        fillColor = "#d9a441";
-        fillOpacity = 0.18;
-        strokeColor = "rgba(217, 164, 65, 0.6)";
-        weight = 1.4;
-      } else if (total > 3 && total <= 15) {
-        fillColor = "#f59e0b";
-        fillOpacity = 0.28;
-        strokeColor = "#d97706";
-        weight = 1.6;
-      } else if (total > 15) {
-        fillColor = "#be1622";
-        fillOpacity = 0.35;
-        strokeColor = "#dc2626";
-        weight = 1.8;
-      }
-
-      return {
-        fillColor,
-        fillOpacity,
-        color: strokeColor,
-        weight,
-        dashArray: "3, 3",
-        opacity: 0.85,
-      };
-    } else {
-      let strokeColor = "rgba(255, 255, 255, 0.18)";
-      let weight = 1.3;
-      let fillColor = "#0f172a";
-      let fillOpacity = 0.18;
-
-      if (total > 0 && total <= 3) {
-        fillColor = "#d9a441";
-        fillOpacity = 0.16;
-        strokeColor = "rgba(217, 164, 65, 0.55)";
-        weight = 1.5;
-      } else if (total > 3 && total <= 15) {
-        fillColor = "#f59e0b";
-        fillOpacity = 0.26;
-        strokeColor = "#d97706";
-        weight = 1.8;
-      } else if (total > 15) {
-        fillColor = "#be1622";
-        fillOpacity = 0.32;
-        strokeColor = "#dc2626";
-        weight = 2;
-      }
-
-      return {
-        fillColor,
-        fillOpacity,
-        color: strokeColor,
-        weight,
-        opacity: 0.9,
-      };
-    }
+    // Past DETAIL_ZOOM the raster carries the geography, so the choropleth
+    // steps back to a thin tint and a brighter outline instead of a flat flood.
+    const detailed = map.getZoom() >= DETAIL_ZOOM;
+    return {
+      fillColor: RAMP[cls],
+      fillOpacity: detailed
+        ? (cls === 0 ? 0.08 : 0.2 + cls * 0.03)
+        : (cls === 0 ? 0.42 : 0.62 + cls * 0.05),
+      color: detailed
+        ? "rgba(231, 226, 214, 0.5)"
+        : "rgba(231, 226, 214, " + (cls === 0 ? 0.26 : 0.34) + ")",
+      weight: detailed ? 1.1 : isDistrict ? 0.7 : 0.9,
+      opacity: 1,
+      dashArray: isDistrict && !detailed ? "2, 3" : null,
+    };
   }
 
   const highlightStyle = {
-    weight: 2.2,
-    color: "#f59e0b",
+    color: "#e7e2d6",
+    weight: 1.8,
+    opacity: 1,
     dashArray: null,
-    fillColor: "rgba(245, 158, 11, 0.22)",
-    fillOpacity: 1,
+    fillOpacity: 0.88,
   };
   function onEachArea(feature, layer) {
     const p = feature.properties;
@@ -663,18 +675,31 @@
 
     if (state.mode === "points") {
       areasLayer.clearLayers();
+      // Subject outlines stay on screen so pins are read against real geography.
+      try {
+        const contours = await api(`/api/areas?level=1&bbox=${bbox}`);
+        contourLayer.clearLayers();
+        if (contours && contours.features) contourLayer.addData(contours);
+        if (!map.hasLayer(contourLayer)) map.addLayer(contourLayer);
+      } catch (e) { /* context layer is optional */ }
+
       let points = [];
       try { points = await api(`/api/points?bbox=${bbox}`); } catch (e) { return; }
       cluster.clearLayers();
       const markers = points.map((p) => {
-        const m = L.marker([p.lat, p.lng]);
+        const m = L.marker([p.lat, p.lng], { icon: pointIcon, title: p.title || "" });
         m.on("click", () => openMedia(p.id));
         return m;
       });
       cluster.addLayers(markers);
-      $("#hint").textContent = `Меток: ${points.length}`;
+      $("#hint").textContent =
+        `В кадре: ${points.length} ${declension(points.length, ["точка", "точки", "точек"])}`;
+      $("#map-legend").classList.add("hidden");
       return;
     }
+
+    if (map.hasLayer(contourLayer)) map.removeLayer(contourLayer);
+    $("#map-legend").classList.remove("hidden");
 
     // Area mode (1 or 2)
     cluster.clearLayers();
@@ -694,9 +719,9 @@
       areasLayer.eachLayer((layer) => onEachArea(layer.feature, layer));
       const count = data.features.length;
       const label = level === "1"
-        ? declension(count, ["субъект РФ", "субъекта РФ", "субъектов РФ"])
+        ? declension(count, ["субъект", "субъекта", "субъектов"])
         : declension(count, ["район", "района", "районов"]);
-      $("#hint").textContent = `${count} ${label} в кадре`;
+      $("#hint").textContent = `В кадре: ${count} ${label}`;
     }
   }
 
@@ -734,7 +759,7 @@
         <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
       </div>
       <h2 class="modal-title">${esc(title)}</h2>
-      <div class="modal-loader"><div class="spinner"></div><span>Загрузка фотохроники…</span></div>
+      <div class="modal-loader"><div class="spinner"></div><span>Загрузка материалов…</span></div>
     `, true);
     const handleAreaUpload = () => {
       const center = (feature && getGeomCenter(feature.geometry)) || map.getCenter();
@@ -756,18 +781,13 @@
           <h2 class="modal-title">${esc(title)}</h2>
           <div class="empty-state">
             <div class="empty-icon-wrap">
-              <div class="empty-icon">
-                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
-                  <circle cx="12" cy="13" r="3"/>
-                </svg>
-              </div>
+              <div class="empty-icon">${ICON.camera}</div>
             </div>
             <h3 class="empty-title">Пока здесь нет снимков и видео</h3>
-            <p class="empty-desc">Будьте первым, кто покажет красоту этого края! Загрузите фотографии или видеоролики — после быстрой модерации они появятся на интерактивной карте страны.</p>
+            <p class="empty-desc">Загрузите фотографию или видео — после модерации материал появится на карте и в галерее региона.</p>
             <button id="ag-upload" class="empty-cta">
               <span class="cta-plus">+</span>
-              <span>Добавить первый материал сюда</span>
+              <span>Добавить материал</span>
             </button>
           </div>
         `);
@@ -782,8 +802,8 @@
         <div class="modal-top">
           <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
           <div class="modal-meta-chips">
-            <span class="meta-chip">${ICON.camera} ${photos} ${declension(photos, ["фото", "фото", "фото"])}</span>
-            <span class="meta-chip">${ICON.video} ${videos} ${declension(videos, ["видео", "видео", "видео"])}</span>
+            ${photos ? `<span class="meta-chip">${ICON.camera} ${photos} фото</span>` : ""}
+            ${videos ? `<span class="meta-chip">${ICON.video} ${videos} видео</span>` : ""}
           </div>
         </div>
         <div class="modal-header-row">
@@ -791,11 +811,11 @@
           <button id="ag-add" class="btn-subtle">+ Добавить ещё</button>
         </div>
         <div class="grid">${items.map(cardHtml).join("")}</div>
-      `, true);
+      `, items.length > 3);
       modalBody.querySelectorAll("[data-media]").forEach((el) =>
         (el.onclick = () => openMedia(el.getAttribute("data-media"))));
     } catch (e) {
-      openModal(`<h2>Ошибка</h2><p>${esc(e.message)}</p>`);
+      openModal(`<h2 class="modal-title">Не удалось загрузить</h2><p class="hint">${esc(e.message)}</p>`);
     }
   }
 
@@ -848,7 +868,7 @@
       <div class="modal-top">
         <div class="modal-badge"><span class="badge-dot"></span>Авторизация</div>
       </div>
-      <h2 class="modal-title">Вход в KYR</h2>
+      <h2 class="modal-title">Вход в атлас</h2>
       <div class="tabs">
         <button id="tab-login" class="active">Вход</button>
         <button id="tab-register">Регистрация</button>
@@ -1006,9 +1026,9 @@
         img.src = URL.createObjectURL(file);
         dzPreview.appendChild(img);
       } else if (file.type.startsWith("video/")) {
-        dzPreview.innerHTML = `<span style="font-size:22px;">🎬</span>`;
+        dzPreview.innerHTML = ICON.video;
       } else {
-        dzPreview.innerHTML = `<span style="font-size:22px;">📁</span>`;
+        dzPreview.innerHTML = ICON.file;
       }
       dzIdle.classList.add("hidden");
       dzSelected.classList.remove("hidden");
@@ -1109,8 +1129,8 @@
     try { m = await api(`/api/media/${id}`); } catch (e) { return; }
     const mine = state.user && (state.user.id === m.user_id || state.user.is_admin);
     const media = m.kind === "video"
-      ? `<video src="${m.url}" controls autoplay style="max-width:100%;border-radius:12px;display:block;"></video>`
-      : `<img src="${m.url}" style="max-width:100%;border-radius:12px;display:block;" />`;
+      ? `<video class="media-frame" src="${m.url}" controls autoplay></video>`
+      : `<img class="media-frame" src="${m.url}" alt="" />`;
     const region = regionName(m);
     openModal(`
       <div class="modal-top">
@@ -1119,8 +1139,8 @@
       </div>
       <h2 class="modal-title" id="md-title">${esc(m.title)}</h2>
       ${media}
-      <p id="md-desc" style="margin: 12px 0 6px; font-size: 14px; line-height: 1.5;">${
-        esc(m.description) || "<span class='hint'>Без описания</span>"}</p>
+      <p class="media-desc" id="md-desc">${
+        esc(m.description) || `<span class="hint">Описание не указано</span>`}</p>
       <div class="hint" style="margin-top:10px;">${ICON.pin} ${region ? esc(region) + " · " : ""}<button type="button" id="md-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button>
         · ${fmtDate(m.created_at)} · Автор:
         <a href="#" id="md-author" class="link">${esc(m.username)}</a></div>
@@ -1397,7 +1417,7 @@
       ${m.thumb
         ? `<img class="thumb" src="${m.thumb}" loading="lazy" />`
         : m.kind === "video"
-          ? `<div class="thumb" style="display:flex;align-items:center;justify-content:center;font-size:32px">🎬</div>`
+          ? `<div class="thumb thumb-video">${ICON.video}</div>`
           : `<img class="thumb" src="${m.url}" loading="lazy" />`}
       <div class="meta">
         <div class="t">${esc(m.title)}</div>
@@ -1414,8 +1434,21 @@
     try { items = await api("/api/admin/pending"); } catch (e) { return; }
     const body = items.length
       ? `<div class="grid">${items.map(cardHtml).join("")}</div>`
-      : `<p class="hint">Очередь модерации пуста 🎉</p>`;
-    openModal(`<h2>Панель модерации · На проверке: ${items.length}</h2>${body}`);
+      : `<div class="empty-state">
+           <div class="empty-icon-wrap"><div class="empty-icon">${ICON.camera}</div></div>
+           <h3 class="empty-title">Очередь пуста</h3>
+           <p class="empty-desc">Все поступившие материалы проверены.</p>
+         </div>`;
+    openModal(`
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>Модерация</div>
+        <div class="modal-meta-chips">
+          <span class="meta-chip">На проверке: ${items.length}</span>
+        </div>
+      </div>
+      <h2 class="modal-title">Очередь материалов</h2>
+      ${body}
+    `, items.length > 3);
     modalBody.querySelectorAll("[data-media]").forEach((el) =>
       (el.onclick = () => reviewDialog(el.getAttribute("data-media"))));
   }
@@ -1423,19 +1456,49 @@
   async function reviewDialog(id) {
     const m = await api(`/api/media/${id}`);
     const media = m.kind === "video"
-      ? `<video src="${m.url}" controls style="max-width:100%;border-radius:12px"></video>`
-      : `<img src="${m.url}" style="max-width:100%;border-radius:12px" />`;
-    openModal(`<h2>${esc(m.title)}</h2>${media}
-      <p style="margin: 10px 0;">${esc(m.description)}</p>
-      <div class="hint">Автор: ${esc(m.username)} · ${ICON.pin} <button type="button" id="rv-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button></div>
-      <div class="row" style="margin-top:16px">
-        <button id="rv-ok" class="ok" style="flex:1;padding:10px;">Одобрить</button>
-        <button id="rv-no" class="danger" style="flex:1;padding:10px;">Отклонить</button>
-      </div>`);
+      ? `<video class="media-frame" src="${m.url}" controls></video>`
+      : `<img class="media-frame" src="${m.url}" alt="" />`;
+    const region = regionName(m);
+    openModal(`
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>Проверка материала</div>
+        <span class="badge pending">${STATUS_RU.pending}</span>
+      </div>
+      <h2 class="modal-title">${esc(m.title)}</h2>
+      ${media}
+      ${m.description
+        ? `<p class="media-desc">${esc(m.description)}</p>` : ""}
+      <div class="hint" style="margin-top:10px">
+        Автор: ${esc(m.username)} · ${region ? esc(region) + " · " : ""}${ICON.pin}
+        <button type="button" id="rv-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button>
+        · ${fmtDate(m.created_at)}
+      </div>
+      <label for="rv-note">Причина отклонения — будет видна автору</label>
+      <input id="rv-note" maxlength="500" placeholder="Например: кадр не относится к указанному региону" />
+      <div class="msg" id="rv-msg"></div>
+      <div class="modal-actions">
+        <button type="button" id="rv-no" class="danger">Отклонить</button>
+        <button type="button" id="rv-ok" class="ok">Одобрить</button>
+      </div>
+    `);
     const act = async (verb) => {
-      await api(`/api/admin/media/${id}/${verb}`, { method: "POST" });
-      openAdmin();
-      if (verb === "approve") reloadView();
+      const note = $("#rv-note").value.trim();
+      if (verb === "reject" && !note) {
+        $("#rv-msg").textContent = "Укажите причину отклонения";
+        return;
+      }
+      $("#rv-ok").disabled = true;
+      $("#rv-no").disabled = true;
+      try {
+        await api(`/api/admin/media/${id}/${verb}`, { method: "POST", json: { note } });
+        openAdmin();
+        if (verb === "approve") reloadView();
+        toast(verb === "approve" ? "Материал одобрен" : "Материал отклонён");
+      } catch (e) {
+        $("#rv-ok").disabled = false;
+        $("#rv-no").disabled = false;
+        $("#rv-msg").textContent = e.message;
+      }
     };
     $("#rv-ok").onclick = () => act("approve");
     $("#rv-no").onclick = () => act("reject");
