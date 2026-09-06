@@ -612,12 +612,15 @@
     };
   }
 
+  // Hover must brighten the outline, never flood the polygon: without an
+  // explicit fillColor Leaflet reuses `color`, which paints the region bone.
   const highlightStyle = {
-    color: "#e7e2d6",
-    weight: 1.8,
+    color: "#f5f1e8",
+    weight: 2,
     opacity: 1,
     dashArray: null,
-    fillOpacity: 0.88,
+    fillColor: "#e7e2d6",
+    fillOpacity: 0.14,
   };
   function onEachArea(feature, layer) {
     const p = feature.properties;

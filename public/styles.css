@@ -414,7 +414,7 @@ button.ok:hover { background: rgba(127, 176, 138, 0.2); color: #a7ceae; }
 #map { position: absolute; inset: 0; background: #080a0f; }
 .leaflet-container { background: #080a0f; font-family: var(--sans); }
 /* Raster context appears only past DETAIL_ZOOM; muted to sit under the ink palette */
-.detail-tiles { filter: grayscale(1) brightness(0.38) contrast(1.18); }
+.detail-tiles { filter: grayscale(1) brightness(0.3) contrast(1.24); }
 
 /* Shooting-point marker */
 .point-pin { background: none !important; border: none !important; }
