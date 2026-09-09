@@ -55,7 +55,11 @@
         </span>
         <input type="text" id="search-input" placeholder="Регион, город или координаты" spellcheck="false" autocomplete="off" />
         <button type="button" id="search-clear" class="search-clear hidden" title="Очистить">&times;</button>
-        <button type="submit" id="search-submit" class="search-submit" title="Найти">Найти</button>
+        <button type="submit" id="search-submit" class="search-submit" title="Найти" aria-label="Найти">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
       </form>
       <div id="search-suggestions" class="search-suggestions hidden"></div>
     </div>

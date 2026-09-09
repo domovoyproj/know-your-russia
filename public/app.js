@@ -613,9 +613,9 @@
         ? (cls === 0 ? 0.08 : 0.2 + cls * 0.03)
         : (cls === 0 ? 0.42 : 0.62 + cls * 0.05),
       color: detailed
-        ? "rgba(231, 226, 214, 0.5)"
-        : "rgba(231, 226, 214, " + (cls === 0 ? 0.26 : 0.34) + ")",
-      weight: detailed ? 1.1 : isDistrict ? 0.7 : 0.9,
+        ? "rgba(148, 163, 184, 0.28)"
+        : "rgba(231, 226, 214, " + (cls === 0 ? 0.24 : 0.32) + ")",
+      weight: detailed ? 0.9 : isDistrict ? 0.6 : 0.85,
       opacity: 1,
       dashArray: isDistrict && !detailed ? "2, 3" : null,
     };
