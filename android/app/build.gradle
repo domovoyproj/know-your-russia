@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'ru.kyr.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "ru.kyr.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+        debug {
+            applicationIdSuffix ".debug"
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // Pure Android SDK WebView implementation - minimal size and zero bloat
+}

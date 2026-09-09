@@ -1,0 +1,16 @@
+#!/bin/sh
+# Minimal gradlew launcher
+APP_HOME=$(cd "$(dirname "$0")" && pwd)
+CLASSPATH=$APP_HOME/gradle/wrapper/gradle-wrapper.jar
+
+if [ -f "$CLASSPATH" ]; then
+    exec java -jar "$CLASSPATH" "$@"
+else
+    # Fallback to system gradle if wrapper jar is not yet cached
+    if command -v gradle >/dev/null 2>&1; then
+        exec gradle "$@"
+    else
+        echo "Gradle wrapper jar not found. Please install gradle or run: gradle wrapper" >&2
+        exit 1
+    fi
+fi

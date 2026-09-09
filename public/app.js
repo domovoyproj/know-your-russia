@@ -1146,13 +1146,111 @@
 
     renderGallery();
   }
+  // ---- PWA INSTALL & APP MODAL ----------------------------------------------
+  let deferredInstallPrompt = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    const btn = $("#nav-app");
+    if (btn) btn.classList.add("highlight");
+  });
+
+  function openAppModal() {
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+
+    openModal(`
+      <div class="modal-top">
+        <div class="modal-badge"><span class="badge-dot"></span>Мобильное приложение</div>
+        <span class="badge ok">v1.1.0</span>
+      </div>
+      <h2 class="modal-title">Приложение KYR</h2>
+      <p class="modal-sub" style="margin: -6px 0 16px; color: var(--fg-3); font-size: 13px;">
+        Интерактивный атлас регионов и народная фотолетопись прямо на вашем смартфоне.
+      </p>
+      
+      <div class="app-modal-body">
+        <div class="app-grid">
+          <!-- Option 1: PWA Direct Install -->
+          <div class="app-card">
+            <div class="app-card-head">
+              <div class="app-card-icon">${ICON.camera}</div>
+              <div>
+                <div class="app-card-title">Веб-приложение (PWA)</div>
+                <div class="app-card-sub">Для Android, iPhone (iOS) и ПК без магазинов</div>
+              </div>
+            </div>
+            <ul class="app-feature-list">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Установка за 1 секунду без скачивания файлов</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Карта и архив субъектов работают офлайн</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Занимает менее 5 МБ памяти устройства</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Автоматические обновления интерфейса</li>
+            </ul>
+            ${isStandalone ? `
+              <div class="notice notice-ok" style="margin-top:auto">✓ Уже установлено и работает как нативное приложение</div>
+            ` : isIos ? `
+              <div class="notice notice-info" style="margin-top:auto;font-size:12px;line-height:1.5">
+                <strong>Для iPhone / iPad:</strong> нажмите кнопку <em>«Поделиться»</em> внизу экрана Safari, затем выберите <strong>«На экран «Домой»</strong>.
+              </div>
+            ` : `
+              <button type="button" id="btn-pwa-install" class="btn-primary-action" style="margin-top:auto">
+                ${deferredInstallPrompt ? "Установить PWA на устройство" : "Добавить на главный экран"}
+              </button>
+            `}
+          </div>
+
+          <!-- Option 2: Android APK Package -->
+          <div class="app-card">
+            <div class="app-card-head">
+              <div class="app-card-icon">
+                <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+              </div>
+              <div>
+                <div class="app-card-title">Android APK (.apk)</div>
+                <div class="app-card-sub">Прямой установочный пакет для Android 8.0+</div>
+              </div>
+            </div>
+            <ul class="app-feature-list">
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Прямой доступ к камере и съёмке на месте</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Высокоточный GPS для привязки координат</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Полноэкранный режим без адресной строки</li>
+              <li><svg viewBox="0 0 24 24" fill="none" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Автономное сохранение кэша тайлов</li>
+            </ul>
+            <a href="/download/kyr.apk" download="kyr.apk" id="btn-apk-download" class="btn-ghost" style="margin-top:auto;text-align:center;text-decoration:none;display:block;padding:9px 14px">
+              ⬇ Скачать APK для Android (Прямая ссылка)
+            </a>
+          </div>
+        </div>
+      </div>
+    `, { wide: true });
+
+    const pwaBtn = $("#btn-pwa-install");
+    if (pwaBtn) {
+      pwaBtn.onclick = async () => {
+        if (deferredInstallPrompt) {
+          deferredInstallPrompt.prompt();
+          const choice = await deferredInstallPrompt.userChoice;
+          if (choice.outcome === "accepted") {
+            toast("Приложение KYR устанавливается");
+            closeModal();
+          }
+          deferredInstallPrompt = null;
+        } else {
+          toast("В меню браузера (⋮) выберите «Установить приложение»");
+        }
+      };
+    }
+  }
+
   // ---- NAV ------------------------------------------------------------------
   function renderNav() {
     const nav = $("#nav");
+    const mobUser = $("#mob-user-label");
     if (state.user) {
       const admin = state.user.is_admin
         ? `<button id="nav-admin">Модерация</button>` : "";
       nav.innerHTML = `
+        <button id="nav-app" class="btn-subtle" title="Установить PWA или скачать APK">Приложение</button>
         <button id="nav-upload" class="btn-nav-upload">+ Загрузить</button>
         ${admin}
         <button id="nav-me" class="user-chip">
@@ -1161,15 +1259,59 @@
         </button>
         <button id="nav-logout">Выход</button>`;
       $("#nav-upload").onclick = startUpload;
+      $("#nav-app").onclick = openAppModal;
       $("#nav-me").onclick = () => openProfile(state.user.id, true);
       $("#nav-logout").onclick = () => setAuth(null, null);
       if (state.user.is_admin) $("#nav-admin").onclick = openAdmin;
+      if (mobUser) mobUser.textContent = state.user.username;
     } else {
-      nav.innerHTML = `<button id="nav-login" class="btn-nav-upload">Войти / Регистрация</button>`;
+      nav.innerHTML = `
+        <button id="nav-app" class="btn-subtle" title="Установить PWA или скачать APK">Приложение</button>
+        <button id="nav-login" class="btn-nav-upload">Войти / Регистрация</button>`;
+      $("#nav-upload") && ($("#nav-upload").onclick = startUpload);
+      $("#nav-app").onclick = openAppModal;
       $("#nav-login").onclick = openAuth;
+      if (mobUser) mobUser.textContent = "Вход";
     }
   }
 
+  // Wire mobile bottom bar
+  const mobMap = $("#mob-nav-map");
+  if (mobMap) {
+    mobMap.onclick = () => {
+      closeModal();
+      map.setView([62, 94], 3);
+      $$(".mob-btn").forEach(b => b.classList.remove("active"));
+      mobMap.classList.add("active");
+    };
+  }
+  const mobSearch = $("#mob-nav-search");
+  if (mobSearch) {
+    mobSearch.onclick = () => {
+      closeModal();
+      const inp = $("#search-input");
+      if (inp) {
+        inp.focus();
+      }
+      $$(".mob-btn").forEach(b => b.classList.remove("active"));
+      mobSearch.classList.add("active");
+    };
+  }
+  const mobUpload = $("#mob-nav-upload");
+  if (mobUpload) {
+    mobUpload.onclick = startUpload;
+  }
+  const mobUserBtn = $("#mob-nav-user");
+  if (mobUserBtn) {
+    mobUserBtn.onclick = () => {
+      if (state.user) openProfile(state.user.id, true);
+      else openAuth();
+    };
+  }
+  const mobAppBtn = $("#mob-nav-app");
+  if (mobAppBtn) {
+    mobAppBtn.onclick = openAppModal;
+  }
   // ---- AUTH DIALOG ----------------------------------------------------------
   function openAuth(onSuccess) {
     openModal(`
@@ -1963,4 +2105,13 @@
   renderNav();
   reloadView();
   if (state.token) api("/api/me").then((u) => setAuth(state.token, u)).catch(() => setAuth(null, null));
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").then((reg) => {
+        console.log("[KYR PWA] ServiceWorker registered:", reg.scope);
+      }).catch((err) => {
+        console.warn("[KYR PWA] ServiceWorker registration error:", err);
+      });
+    });
+  }
 })();

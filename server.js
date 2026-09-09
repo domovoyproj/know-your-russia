@@ -96,7 +96,15 @@ async function serveStatic(baseDir, relPath) {
   if (!abs.startsWith(normalize(baseDir))) return err("forbidden", 403);
   const file = Bun.file(abs);
   if (!(await file.exists())) return err("not found", 404);
-  return new Response(file);
+  
+  const headers = {};
+  if (abs.endsWith(".apk")) {
+    headers["content-type"] = "application/vnd.android.package-archive";
+    headers["content-disposition"] = 'attachment; filename="kyr.apk"';
+  } else if (abs.endsWith(".webmanifest")) {
+    headers["content-type"] = "application/manifest+json; charset=utf-8";
+  }
+  return new Response(file, { headers });
 }
 
 const routes = [];

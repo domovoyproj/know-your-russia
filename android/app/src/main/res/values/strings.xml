@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KYR</string>
+    <string name="offline_title">Нет подключения к сети</string>
+    <string name="offline_desc">Проверьте соединение с интернетом и повторите попытку.</string>
+    <string name="offline_retry">Повторить</string>
+</resources>
