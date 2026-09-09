@@ -12,6 +12,12 @@
     video: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="12" height="12" rx="2.2"/><path d="M15 10.4 21 7v10l-6-3.4z"/></svg>',
     pin: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6.4-5.5 6.4-10.1A6.4 6.4 0 0 0 5.6 10.9C5.6 15.5 12 21 12 21z"/><circle cx="12" cy="10.6" r="2.3"/></svg>',
     file: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
+    search: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></svg>',
+    chevronLeft: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+    chevronRight: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',
+    grid: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>',
+    cards: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/></svg>',
+    back: '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>',
   };
 
   // Russian names for 83 ADM1 regions
@@ -775,7 +781,46 @@
     return { lat: (minY + maxY) / 2, lng: (minX + maxX) / 2 };
   }
 
-  // ---- AREA GALLERY MODAL ---------------------------------------------------
+  // ---- MODAL ----------------------------------------------------------------
+  const modal = $("#modal");
+  const modalCard = $(".modal-card");
+  const modalBody = $("#modal-body");
+  let activeViewerKeyHandler = null;
+
+  const openModal = (html, opts = false) => {
+    if (activeViewerKeyHandler) {
+      window.removeEventListener("keydown", activeViewerKeyHandler);
+      activeViewerKeyHandler = null;
+    }
+    modalBody.innerHTML = html;
+    if (modalCard) {
+      modalCard.classList.remove("modal-wide", "modal-gallery", "modal-viewer");
+      if (typeof opts === "boolean") {
+        if (opts) modalCard.classList.add("modal-wide");
+      } else if (opts && typeof opts === "object") {
+        if (opts.wide) modalCard.classList.add("modal-wide");
+        if (opts.gallery) modalCard.classList.add("modal-gallery");
+        if (opts.viewer) modalCard.classList.add("modal-viewer");
+      }
+    }
+    modal.classList.remove("hidden");
+  };
+
+  const closeModal = () => {
+    if (activeViewerKeyHandler) {
+      window.removeEventListener("keydown", activeViewerKeyHandler);
+      activeViewerKeyHandler = null;
+    }
+    modal.classList.add("hidden");
+    if (modalCard) modalCard.classList.remove("modal-wide", "modal-gallery", "modal-viewer");
+    modalBody.innerHTML = "";
+  };
+
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal || e.target.hasAttribute("data-close")) closeModal();
+  });
+
+  // ---- AREA GALLERY MODAL (optimised for 1 to 1000+ items) ------------------
   async function openAreaGallery(level, id, title, feature) {
     const levelName = level === 2 ? "Район / Город" : "Субъект РФ";
     openModal(`
@@ -784,7 +829,8 @@
       </div>
       <h2 class="modal-title">${esc(title)}</h2>
       <div class="modal-loader"><div class="spinner"></div><span>Загрузка материалов…</span></div>
-    `, true);
+    `, { wide: true, gallery: true });
+
     const handleAreaUpload = () => {
       const center = (feature && getGeomCenter(feature.geometry)) || map.getCenter();
       if (!state.user) {
@@ -794,74 +840,312 @@
       openUploadForm(center.lat, center.lng, title);
     };
 
+    let allItems = [];
     try {
       const data = await api(`/api/areas/${level}/${id}/media`);
-      const items = data.media || [];
-      if (!items.length) {
-        openModal(`
-          <div class="modal-top">
-            <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
-          </div>
-          <h2 class="modal-title">${esc(title)}</h2>
-          <div class="empty-state">
-            <div class="empty-icon-wrap">
-              <div class="empty-icon">${ICON.camera}</div>
-            </div>
-            <h3 class="empty-title">Пока здесь нет снимков и видео</h3>
-            <p class="empty-desc">Загрузите фотографию или видео — после модерации материал появится на карте и в галерее региона.</p>
-            <button id="ag-upload" class="empty-cta">
-              <span class="cta-plus">+</span>
-              <span>Добавить материал</span>
-            </button>
-          </div>
-        `);
-        $("#ag-upload").onclick = handleAreaUpload;
-        return;
-      }
+      allItems = data.media || [];
+    } catch (e) {
+      openModal(`<h2 class="modal-title">Не удалось загрузить</h2><p class="hint">${esc(e.message)}</p>`);
+      return;
+    }
 
-      const photos = items.filter(i => i.kind !== "video").length;
-      const videos = items.filter(i => i.kind === "video").length;
-
+    if (!allItems.length) {
       openModal(`
         <div class="modal-top">
           <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
-          <div class="modal-meta-chips">
-            ${photos ? `<span class="meta-chip">${ICON.camera} ${photos} фото</span>` : ""}
-            ${videos ? `<span class="meta-chip">${ICON.video} ${videos} видео</span>` : ""}
+        </div>
+        <h2 class="modal-title">${esc(title)}</h2>
+        <div class="empty-state">
+          <div class="empty-icon-wrap">
+            <div class="empty-icon">${ICON.camera}</div>
+          </div>
+          <h3 class="empty-title">Пока здесь нет снимков и видео</h3>
+          <p class="empty-desc">Загрузите фотографию или видео — после модерации материал появится на карте и в галерее региона.</p>
+          <button id="ag-upload" class="empty-cta">
+            <span class="cta-plus">+</span>
+            <span>Добавить материал</span>
+          </button>
+        </div>
+      `, { wide: false });
+      $("#ag-upload").onclick = handleAreaUpload;
+      return;
+    }
+
+    // Gallery local state for smooth navigation across 1000 items
+    let filter = "all"; // 'all' | 'photo' | 'video'
+    let search = "";
+    let sort = "new"; // 'new' | 'old' | 'author'
+    let view = "grid"; // 'grid' (dense) | 'cards' (detailed)
+    let page = 1;
+    const PAGE_SIZE = 36;
+
+    const renderGallery = () => {
+      const photoCount = allItems.filter(i => i.kind !== "video").length;
+      const videoCount = allItems.filter(i => i.kind === "video").length;
+
+      // Special elegant Showcase View if there is exactly 1 item and no active search
+      if (allItems.length === 1 && !search) {
+        const item = allItems[0];
+        openModal(`
+          <div class="modal-gallery-head">
+            <div class="modal-top">
+              <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
+              <div class="modal-meta-chips">
+                ${photoCount ? `<span class="meta-chip">${ICON.camera} 1 фото</span>` : ""}
+                ${videoCount ? `<span class="meta-chip">${ICON.video} 1 видео</span>` : ""}
+              </div>
+            </div>
+            <div class="modal-header-row" style="margin-bottom:0;border-bottom:none;padding-bottom:0">
+              <h2 class="modal-title">${esc(title)}</h2>
+              <button id="ag-add-btn" class="btn-primary-action">+ Добавить ещё</button>
+            </div>
+          </div>
+          <div class="modal-gallery-body">
+            <div class="ag-showcase">
+              <div class="ag-showcase-media" id="ag-single-hero" title="Нажмите для полноразмерного просмотра">
+                ${item.kind === "video"
+                  ? `<video src="${item.url}" controls></video>`
+                  : `<img src="${item.url}" alt="${esc(item.title)}" loading="eager" />`}
+                <div class="ag-showcase-zoom-hint">${ICON.search} Полноразмерный просмотр</div>
+              </div>
+              <div class="ag-showcase-info">
+                <div class="ag-showcase-title">${esc(item.title)}</div>
+                ${item.description ? `<p class="ag-showcase-desc">${esc(item.description)}</p>` : `<p class="ag-showcase-desc hint">Описание не указано</p>`}
+                <div class="ag-showcase-meta">
+                  <div class="ag-meta-row"><span class="ag-meta-lbl">Автор:</span><span class="ag-meta-val"><a href="#" id="ag-single-author" class="link">${esc(item.username)}</a></span></div>
+                  <div class="ag-meta-row"><span class="ag-meta-lbl">Дата:</span><span class="ag-meta-val">${fmtDate(item.created_at)}</span></div>
+                  <div class="ag-meta-row"><span class="ag-meta-lbl">Точка съёмки:</span><span class="ag-meta-val"><button type="button" id="ag-single-coords" class="coord-link">${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}</button></span></div>
+                  <div class="ag-meta-row"><span class="ag-meta-lbl">Статус:</span><span class="ag-meta-val"><span class="badge ${item.status}">${STATUS_RU[item.status] || item.status}</span></span></div>
+                </div>
+                <div class="ag-showcase-cta">
+                  <div class="ag-cta-title">Пополняйте архив региона</div>
+                  <p class="ag-cta-desc">Добавляйте снимки и видео интересных мест, архитектуры и природы. Каждый кадр становится частью интерактивного атласа страны.</p>
+                  <button type="button" id="ag-showcase-add" class="btn-nav-upload">+ Загрузить свой снимок</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `, { wide: true, gallery: true });
+
+        $("#ag-add-btn").onclick = handleAreaUpload;
+        $("#ag-showcase-add").onclick = handleAreaUpload;
+        $("#ag-single-hero").onclick = () => openMedia(item.id, { items: allItems, index: 0, onBack: renderGallery });
+        $("#ag-single-author").onclick = (e) => { e.preventDefault(); openProfile(item.user_id, false); };
+        $("#ag-single-coords").onclick = (e) => {
+          e.preventDefault();
+          closeModal();
+          jumpToCoords(item.lat, item.lng, { zoom: 14, title: item.title });
+        };
+        return;
+      }
+
+      // Filter and sort items
+      let filtered = allItems;
+      if (filter === "photo") filtered = filtered.filter(i => i.kind !== "video");
+      else if (filter === "video") filtered = filtered.filter(i => i.kind === "video");
+
+      if (search.trim()) {
+        const q = search.toLowerCase().trim();
+        filtered = filtered.filter(i =>
+          (i.title && i.title.toLowerCase().includes(q)) ||
+          (i.username && i.username.toLowerCase().includes(q)) ||
+          (i.description && i.description.toLowerCase().includes(q))
+        );
+      }
+
+      if (sort === "new") {
+        filtered = [...filtered].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+      } else if (sort === "old") {
+        filtered = [...filtered].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      } else if (sort === "author") {
+        filtered = [...filtered].sort((a, b) => (a.username || "").localeCompare(b.username || ""));
+      }
+
+      const visible = filtered.slice(0, page * PAGE_SIZE);
+
+      // Render dense tile
+      const renderTile = (m, idx) => `
+        <div class="ag-tile" data-idx="${idx}" data-media="${m.id}" title="${esc(m.title)}">
+          <img src="${m.thumb || m.url}" alt="${esc(m.title)}" loading="lazy" decoding="async" />
+          ${m.kind === "video" ? `<div class="ag-tile-vid-badge">${ICON.video}</div>` : ""}
+          <div class="ag-tile-overlay">
+            <div class="ag-tile-title">${esc(m.title)}</div>
+            <div class="ag-tile-author">${esc(m.username)} · ${fmtDate(m.created_at)}</div>
           </div>
         </div>
-        <div class="modal-header-row">
-          <h2 class="modal-title">${esc(title)}</h2>
-          <button id="ag-add" class="btn-subtle">+ Добавить ещё</button>
+      `;
+
+      // Render items container
+      let itemsHtml = "";
+      if (!filtered.length) {
+        itemsHtml = `
+          <div class="empty-state" style="margin-top:20px;">
+            <h3 class="empty-title">Ничего не найдено</h3>
+            <p class="empty-desc">По запросу «${esc(search)}» в этом регионе нет материалов.</p>
+            <button type="button" id="ag-reset-search" class="btn">Сбросить фильтры</button>
+          </div>
+        `;
+      } else if (view === "grid") {
+        itemsHtml = `<div class="ag-dense-grid">${visible.map((m, idx) => renderTile(m, idx)).join("")}</div>`;
+      } else {
+        itemsHtml = `<div class="grid">${visible.map(cardHtml).join("")}</div>`;
+      }
+
+      const hasMore = visible.length < filtered.length;
+      const moreHtml = hasMore ? `
+        <div class="ag-load-more-wrap">
+          <button type="button" id="ag-more-btn" class="btn ag-load-more-btn">
+            Показать ещё (+${Math.min(PAGE_SIZE, filtered.length - visible.length)})
+          </button>
         </div>
-        <div class="grid">${items.map(cardHtml).join("")}</div>
-      `, items.length > 3);
-      modalBody.querySelectorAll("[data-media]").forEach((el) =>
-        (el.onclick = () => openMedia(el.getAttribute("data-media"))));
-    } catch (e) {
-      openModal(`<h2 class="modal-title">Не удалось загрузить</h2><p class="hint">${esc(e.message)}</p>`);
-    }
+      ` : "";
+
+      openModal(`
+        <div class="modal-gallery-head">
+          <div class="modal-top">
+            <div class="modal-badge"><span class="badge-dot"></span>${levelName}</div>
+            <div class="modal-meta-chips">
+              ${photoCount ? `<span class="meta-chip">${ICON.camera} ${photoCount} фото</span>` : ""}
+              ${videoCount ? `<span class="meta-chip">${ICON.video} ${videoCount} видео</span>` : ""}
+            </div>
+          </div>
+          <div class="modal-header-row" style="margin-bottom:0;border-bottom:none;padding-bottom:0">
+            <h2 class="modal-title">${esc(title)}</h2>
+            <button id="ag-add-btn" class="btn-primary-action">+ Добавить материал</button>
+          </div>
+          <div class="ag-toolbar">
+            <div class="ag-tabs">
+              <button type="button" class="ag-tab ${filter === 'all' ? 'active' : ''}" data-filter="all">Все (${allItems.length})</button>
+              <button type="button" class="ag-tab ${filter === 'photo' ? 'active' : ''}" data-filter="photo">Фото (${photoCount})</button>
+              <button type="button" class="ag-tab ${filter === 'video' ? 'active' : ''}" data-filter="video">Видео (${videoCount})</button>
+            </div>
+            <div class="ag-controls">
+              <div class="ag-search-wrap">
+                ${ICON.search}
+                <input type="search" id="ag-search" class="ag-search-input" placeholder="Поиск по названию или автору…" value="${esc(search)}" />
+                ${search ? `<button type="button" id="ag-search-clear" class="ag-search-clear">&times;</button>` : ""}
+              </div>
+              <select id="ag-sort" class="ag-select">
+                <option value="new" ${sort === 'new' ? 'selected' : ''}>Сначала новые</option>
+                <option value="old" ${sort === 'old' ? 'selected' : ''}>Сначала старые</option>
+                <option value="author" ${sort === 'author' ? 'selected' : ''}>По автору</option>
+              </select>
+              <div class="ag-view-toggle">
+                <button type="button" class="ag-view-btn ${view === 'grid' ? 'active' : ''}" id="ag-v-grid" title="Плитка (компактная сетка)">${ICON.grid}</button>
+                <button type="button" class="ag-view-btn ${view === 'cards' ? 'active' : ''}" id="ag-v-cards" title="Карточки (подробный вид)">${ICON.cards}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-gallery-body" id="ag-body">
+          <div class="ag-counter-strip">
+            <span>Показано ${visible.length} из ${filtered.length} ${declension(filtered.length, ["материала", "материалов", "материалов"])}</span>
+          </div>
+          ${itemsHtml}
+          ${moreHtml}
+        </div>
+      `, { wide: true, gallery: true });
+
+      // Wiring events
+      $("#ag-add-btn").onclick = handleAreaUpload;
+
+      modalBody.querySelectorAll(".ag-tab").forEach(tab => {
+        tab.onclick = () => {
+          filter = tab.getAttribute("data-filter");
+          page = 1;
+          renderGallery();
+        };
+      });
+
+      const sInp = $("#ag-search");
+      if (sInp) {
+        sInp.oninput = () => {
+          search = sInp.value;
+          page = 1;
+          clearTimeout(sInp._st);
+          sInp._st = setTimeout(renderGallery, 160);
+        };
+      }
+
+      const sClr = $("#ag-search-clear");
+      if (sClr) {
+        sClr.onclick = () => {
+          search = "";
+          page = 1;
+          renderGallery();
+        };
+      }
+
+      const rstBtn = $("#ag-reset-search");
+      if (rstBtn) {
+        rstBtn.onclick = () => {
+          search = "";
+          filter = "all";
+          page = 1;
+          renderGallery();
+        };
+      }
+
+      const sSort = $("#ag-sort");
+      if (sSort) {
+        sSort.onchange = () => {
+          sort = sSort.value;
+          renderGallery();
+        };
+      }
+
+      const vGrid = $("#ag-v-grid");
+      if (vGrid) {
+        vGrid.onclick = () => {
+          view = "grid";
+          renderGallery();
+        };
+      }
+
+      const vCards = $("#ag-v-cards");
+      if (vCards) {
+        vCards.onclick = () => {
+          view = "cards";
+          renderGallery();
+        };
+      }
+
+      const moreBtn = $("#ag-more-btn");
+      if (moreBtn) {
+        moreBtn.onclick = () => {
+          page += 1;
+          renderGallery();
+        };
+      }
+
+      // Infinite scroll trigger when reaching bottom of body
+      const gBody = $("#ag-body");
+      if (gBody && hasMore) {
+        gBody.onscroll = () => {
+          if (gBody.scrollTop + gBody.clientHeight >= gBody.scrollHeight - 220) {
+            gBody.onscroll = null;
+            page += 1;
+            renderGallery();
+          }
+        };
+      }
+
+      // Card / tile clicks -> open Lightbox viewer
+      modalBody.querySelectorAll("[data-media]").forEach(el => {
+        el.onclick = () => {
+          const mediaId = Number(el.getAttribute("data-media"));
+          const idx = filtered.findIndex(i => i.id === mediaId);
+          openMedia(mediaId, {
+            items: filtered,
+            index: idx >= 0 ? idx : 0,
+            onBack: renderGallery
+          });
+        };
+      });
+    };
+
+    renderGallery();
   }
-
-  // ---- MODAL ----------------------------------------------------------------
-  const modal = $("#modal");
-  const modalCard = $(".modal-card");
-  const modalBody = $("#modal-body");
-  const openModal = (html, wide = false) => {
-    modalBody.innerHTML = html;
-    if (wide && modalCard) modalCard.classList.add("modal-wide");
-    else if (modalCard) modalCard.classList.remove("modal-wide");
-    modal.classList.remove("hidden");
-  };
-  const closeModal = () => {
-    modal.classList.add("hidden");
-    if (modalCard) modalCard.classList.remove("modal-wide");
-    modalBody.innerHTML = "";
-  };
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal || e.target.hasAttribute("data-close")) closeModal();
-  });
-
   // ---- NAV ------------------------------------------------------------------
   function renderNav() {
     const nav = $("#nav");
@@ -1148,34 +1432,161 @@
         (user.username || "?").slice(0, 1).toUpperCase())}</div>`;
 
   // ---- MEDIA DETAIL ---------------------------------------------------------
-  async function openMedia(id, onChange) {
+  async function openMedia(id, contextOrOnChange) {
+    let ctx = null;
+    let onChange = null;
+    if (typeof contextOrOnChange === "function") {
+      onChange = contextOrOnChange;
+    } else if (contextOrOnChange && typeof contextOrOnChange === "object") {
+      ctx = contextOrOnChange;
+      onChange = ctx.onChange;
+    }
+
     let m;
-    try { m = await api(`/api/media/${id}`); } catch (e) { return; }
+    try {
+      m = await api(`/api/media/${id}`);
+    } catch (e) {
+      toast("Не удалось загрузить материал: " + e.message);
+      return;
+    }
+
+    const items = ctx && Array.isArray(ctx.items) && ctx.items.length > 0 ? ctx.items : null;
+    let idx = items ? items.findIndex(it => it.id === m.id) : -1;
+    if (idx < 0 && items && typeof ctx.index === "number") idx = ctx.index;
+
+    const hasItems = Boolean(items && items.length > 1 && idx >= 0);
+    const hasPrev = hasItems && idx > 0;
+    const hasNext = hasItems && idx < items.length - 1;
+
     const mine = state.user && (state.user.id === m.user_id || state.user.is_admin);
     const media = m.kind === "video"
-      ? `<video class="media-frame" src="${m.url}" controls autoplay></video>`
-      : `<img class="media-frame" src="${m.url}" alt="" />`;
+      ? `<video class="mv-media" src="${m.url}" controls autoplay></video>`
+      : `<img class="mv-media" src="${m.url}" alt="${esc(m.title)}" />`;
     const region = regionName(m);
-    openModal(`
-      <div class="modal-top">
-        <div class="modal-badge"><span class="badge-dot"></span>Материал</div>
-        <span class="badge ${m.status}">${STATUS_RU[m.status] || m.status}</span>
+
+    // Filmstrip generation (window around current index)
+    let stripHtml = "";
+    if (hasItems) {
+      stripHtml = `
+        <div class="mv-strip-wrap">
+          <div class="mv-strip" id="mv-strip">
+            ${items.map((it, i) => `
+              <button type="button" class="mv-thumb ${i === idx ? 'active' : ''}" data-idx="${i}" title="${esc(it.title)}">
+                <img src="${it.thumb || it.url}" alt="" loading="lazy" decoding="async" />
+                ${it.kind === "video" ? `<div class="mv-thumb-vid">${ICON.video}</div>` : ""}
+              </button>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    const topHtml = `
+      <div class="mv-topbar">
+        ${ctx && ctx.onBack ? `<button type="button" id="mv-back" class="btn btn-subtle">${ICON.back} Назад к галерее (${items ? items.length : ""})</button>` : `<div class="modal-badge"><span class="badge-dot"></span>Материал</div>`}
+        ${hasItems ? `<div class="mv-counter-chip">${idx + 1} из ${items.length}</div>` : ""}
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="badge ${m.status}">${STATUS_RU[m.status] || m.status}</span>
+        </div>
       </div>
-      <h2 class="modal-title" id="md-title">${esc(m.title)}</h2>
-      ${media}
-      <p class="media-desc" id="md-desc">${
-        esc(m.description) || `<span class="hint">Описание не указано</span>`}</p>
-      <div class="hint" style="margin-top:10px;">${ICON.pin} ${region ? esc(region) + " · " : ""}<button type="button" id="md-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button>
-        · ${fmtDate(m.created_at)} · Автор:
-        <a href="#" id="md-author" class="link">${esc(m.username)}</a></div>
-      ${m.status === "rejected" && m.review_note
-        ? `<div class="notice notice-err" style="margin-top:12px">Причина отклонения: ${esc(m.review_note)}</div>` : ""}
+    `;
+
+    openModal(`
+      ${topHtml}
+      <div class="mv-stage">
+        ${hasPrev ? `<button type="button" id="mv-prev" class="mv-nav mv-prev" title="Предыдущий материал (←)">${ICON.chevronLeft}</button>` : ""}
+        ${media}
+        ${hasNext ? `<button type="button" id="mv-next" class="mv-nav mv-next" title="Следующий материал (→)">${ICON.chevronRight}</button>` : ""}
+      </div>
+      ${stripHtml}
+      <div class="mv-info-row">
+        <div class="mv-info-main">
+          <h2 class="mv-title" id="md-title">${esc(m.title)}</h2>
+          <p class="mv-desc" id="md-desc">${esc(m.description) || `<span class="hint">Описание не указано</span>`}</p>
+          <div class="mv-info-meta">
+            ${ICON.pin} ${region ? esc(region) + " · " : ""}
+            <button type="button" id="md-coords" class="coord-link" title="Показать на карте">${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</button>
+            · ${fmtDate(m.created_at)} · Автор:
+            <a href="#" id="md-author" class="link">${esc(m.username)}</a>
+          </div>
+        </div>
+        ${mine ? `
+          <div class="mv-actions">
+            <button type="button" id="md-del" class="btn-ghost danger">Удалить</button>
+            <button type="button" id="md-edit-btn" class="btn-primary-action">Редактировать</button>
+          </div>
+        ` : ""}
+      </div>
+      ${m.status === "rejected" && m.review_note ? `<div class="notice notice-err" style="margin-top:12px">Причина отклонения: ${esc(m.review_note)}</div>` : ""}
       <div id="md-edit"></div>
-      ${mine ? `<div class="modal-actions" style="margin-top:16px">
-        <button type="button" id="md-del" class="btn-ghost danger">Удалить</button>
-        <button type="button" id="md-edit-btn" class="btn-primary-action">Редактировать</button>
-      </div>` : ""}
-    `);
+    `, { wide: true, viewer: true });
+
+    // Scroll active thumbnail in filmstrip into center
+    const activeThumb = modalBody.querySelector(".mv-thumb.active");
+    if (activeThumb) {
+      activeThumb.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    }
+
+    // Wiring Back button
+    const backBtn = $("#mv-back");
+    if (backBtn && ctx && ctx.onBack) {
+      backBtn.onclick = () => {
+        if (activeViewerKeyHandler) {
+          window.removeEventListener("keydown", activeViewerKeyHandler);
+          activeViewerKeyHandler = null;
+        }
+        ctx.onBack();
+      };
+    }
+
+    // Wiring Prev/Next
+    const goToIndex = (targetIdx) => {
+      if (targetIdx < 0 || targetIdx >= items.length) return;
+      if (activeViewerKeyHandler) {
+        window.removeEventListener("keydown", activeViewerKeyHandler);
+        activeViewerKeyHandler = null;
+      }
+      openMedia(items[targetIdx].id, {
+        items,
+        index: targetIdx,
+        onBack: ctx ? ctx.onBack : null,
+        onChange
+      });
+    };
+
+    const prevBtn = $("#mv-prev");
+    if (prevBtn) prevBtn.onclick = () => goToIndex(idx - 1);
+
+    const nextBtn = $("#mv-next");
+    if (nextBtn) nextBtn.onclick = () => goToIndex(idx + 1);
+
+    // Filmstrip clicks
+    modalBody.querySelectorAll(".mv-thumb").forEach(thumb => {
+      thumb.onclick = () => {
+        const targetIdx = Number(thumb.getAttribute("data-idx"));
+        goToIndex(targetIdx);
+      };
+    });
+
+    // Keyboard navigation (ArrowLeft, ArrowRight, Escape)
+    activeViewerKeyHandler = (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+      if (e.key === "ArrowLeft" && hasPrev) {
+        e.preventDefault();
+        goToIndex(idx - 1);
+      } else if (e.key === "ArrowRight" && hasNext) {
+        e.preventDefault();
+        goToIndex(idx + 1);
+      } else if (e.key === "Escape" && ctx && ctx.onBack) {
+        e.preventDefault();
+        window.removeEventListener("keydown", activeViewerKeyHandler);
+        activeViewerKeyHandler = null;
+        ctx.onBack();
+      }
+    };
+    window.addEventListener("keydown", activeViewerKeyHandler);
+
+    // Other wiring: author, coords, edit, delete
     $("#md-author").onclick = (e) => { e.preventDefault(); openProfile(m.user_id, false); };
     const mdCoords = $("#md-coords");
     if (mdCoords) {
@@ -1185,6 +1596,7 @@
         jumpToCoords(m.lat, m.lng, { zoom: 14, title: m.title });
       };
     }
+
     if (!mine) return;
 
     $("#md-edit-btn").onclick = () => {
@@ -1212,7 +1624,7 @@
           });
           if (onChange) onChange();
           reloadView();
-          openMedia(id, onChange);
+          openMedia(id, contextOrOnChange);
           if (res.requeued) toast("Материал изменён и отправлен на повторную модерацию");
         } catch (e) {
           $("#ed-save").disabled = false;
@@ -1235,10 +1647,21 @@
         $("#dl-yes").disabled = true;
         try {
           await api(`/api/media/${id}`, { method: "DELETE" });
-          closeModal();
-          reloadView();
-          if (onChange) onChange();
-          toast("Материал удалён");
+          if (ctx && ctx.onBack) {
+            if (items) {
+              const delIdx = items.findIndex(it => it.id === m.id);
+              if (delIdx >= 0) items.splice(delIdx, 1);
+            }
+            reloadView();
+            if (onChange) onChange();
+            toast("Материал удалён");
+            ctx.onBack();
+          } else {
+            closeModal();
+            reloadView();
+            if (onChange) onChange();
+            toast("Материал удалён");
+          }
         } catch (e) {
           $("#dl-yes").disabled = false;
           $("#md-edit").innerHTML = `<div class="notice notice-err">${esc(e.message)}</div>`;
