@@ -157,9 +157,9 @@
     pane: "contours",
     interactive: false,
     style: {
-      fillColor: "#1b202b",
+      fillColor: "#141720",
       fillOpacity: 0.34,
-      color: "rgba(231, 226, 214, 0.18)",
+      color: "rgba(238, 234, 224, 0.14)",
       weight: 0.7,
       dashArray: null,
     },
@@ -595,7 +595,7 @@
   // ---- CHOROPLETH ----------------------------------------------------------
   // Single-hue sequential ramp; classes and hex values mirror --ramp-* in
   // styles.css and the legend in index.html. Keep all three in sync.
-  const RAMP = ["#1b202b", "#5c2a2b", "#85302c", "#ac3a30", "#d24b3b"];
+  const RAMP = ["#12151c", "#1c222e", "#2e2a26", "#4d3b2a", "#7a5833"];
 
   const rampClass = (total) =>
     total === 0 ? 0 : total <= 2 ? 1 : total <= 9 ? 2 : total <= 29 ? 3 : 4;
@@ -920,7 +920,7 @@
                 <div class="ag-showcase-cta">
                   <div class="ag-cta-title">Пополняйте архив региона</div>
                   <p class="ag-cta-desc">Добавляйте снимки и видео интересных мест, архитектуры и природы. Каждый кадр становится частью интерактивного атласа страны.</p>
-                  <button type="button" id="ag-showcase-add" class="btn-nav-upload">+ Загрузить свой снимок</button>
+                  <button type="button" id="ag-showcase-add" class="btn-primary-action">+ Загрузить свой снимок</button>
                 </div>
               </div>
             </div>
