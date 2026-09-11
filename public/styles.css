@@ -100,8 +100,8 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  height: 50px;
-  padding: 0 16px;
+  height: calc(50px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 16px 0;
   background: var(--ink-850);
   border-bottom: 1px solid var(--line-2);
   z-index: 1000;
@@ -728,7 +728,8 @@ button.ok:hover {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: 48px 20px;
+  padding: max(48px, calc(env(safe-area-inset-top) + 16px)) 20px
+           max(48px, calc(env(safe-area-inset-bottom) + 16px));
   overflow: auto;
   background: rgba(6, 8, 11, 0.78);
   backdrop-filter: blur(3px);
@@ -747,7 +748,7 @@ button.ok:hover {
 .modal-card.modal-wide { width: min(1080px, 100%); }
 .modal-card.modal-gallery {
   width: min(1180px, 95vw);
-  max-height: 90vh;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   padding: 22px 26px 20px;
@@ -755,7 +756,7 @@ button.ok:hover {
 }
 .modal-card.modal-viewer {
   width: min(1200px, 96vw);
-  max-height: 92vh;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   padding: 16px 22px 20px;
@@ -1829,6 +1830,9 @@ textarea { resize: vertical; line-height: 1.55; }
 /* ==========================================================================
    RESPONSIVE
    ========================================================================== */
+/* Mobile-only chrome; the <=768px block turns this into a fixed bottom bar */
+.mobile-bar { display: none; }
+
 @media (max-width: 1280px) {
   .brand-sub { display: none; }
   .omni-search { max-width: 260px; }
@@ -1846,7 +1850,10 @@ textarea { resize: vertical; line-height: 1.55; }
 }
 @media (max-width: 768px) {
   .view-switch { display: none; }
-  .modal { padding: 16px 10px; }
+  .modal {
+    padding: calc(env(safe-area-inset-top) + 12px) 10px
+             calc(env(safe-area-inset-bottom) + 16px);
+  }
   .modal-card { padding: 16px 14px 18px; border-radius: 12px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
 
@@ -1921,9 +1928,9 @@ textarea { resize: vertical; line-height: 1.55; }
     height: 22px;
   }
   
-  /* Map & Legend adjustments for mobile bottom bar */
+  /* Map: shrink the flex item so Leaflet sizes to the visible area */
   #map-wrap {
-    bottom: calc(58px + env(safe-area-inset-bottom));
+    margin-bottom: calc(58px + env(safe-area-inset-bottom));
   }
   .map-legend {
     bottom: 12px;
@@ -1939,8 +1946,19 @@ textarea { resize: vertical; line-height: 1.55; }
     right: 10px;
   }
   #topbar {
-    padding: 0 10px;
+    padding: env(safe-area-inset-top) 10px 0;
   }
+  /* Safari zooms the whole page when a focused control renders below 16px */
+  .search-form input,
+  .ag-search-input,
+  .ag-select,
+  input[type="text"],
+  input[type="password"],
+  input:not([type]),
+  textarea {
+    font-size: 16px;
+  }
+  .search-form { height: 36px; }
   #nav {
     display: none; /* Handled in bottom navigation */
   }
