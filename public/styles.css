@@ -1859,7 +1859,7 @@ textarea { resize: vertical; line-height: 1.55; }
     bottom: 0;
     left: 0;
     right: 0;
-    height: 58px;
+    height: calc(58px + env(safe-area-inset-bottom));
     padding-bottom: max(4px, env(safe-area-inset-bottom));
     background: rgba(11, 15, 23, 0.94);
     backdrop-filter: blur(20px);
@@ -1923,14 +1923,16 @@ textarea { resize: vertical; line-height: 1.55; }
   
   /* Map & Legend adjustments for mobile bottom bar */
   #map-wrap {
-    bottom: 58px;
+    bottom: calc(58px + env(safe-area-inset-bottom));
   }
   .map-legend {
     bottom: 12px;
     left: 10px;
-    max-width: 170px;
+    max-width: 210px;
     padding: 7px 10px;
   }
+  .legend-step { width: 38px; }
+  .legend-label { font-size: 8.5px; white-space: nowrap; }
   .area-card-bottom {
     bottom: 10px;
     left: 10px;
